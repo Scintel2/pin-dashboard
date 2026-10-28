@@ -140,6 +140,7 @@
   .pin-tag { font-size:11px; color:#848e9c; background:#1e242c; border-radius:4px; padding:2px 8px; }
   .pin-row2 { display:flex; gap:4px 16px; flex-wrap:wrap; font-size:15px; color:#b7c0cc; font-variant-numeric:tabular-nums; }
   .pin-row2 .lb { color:#848e9c; }
+  .pin-row2 .px-val { color:#f6465d; font-weight:800; font-size:17px; text-shadow:0 0 8px rgba(246,70,93,.8); }   /* 进行中卡片"现价"后的价格数字刺眼红(#f6465d 全页统一红涨色); 标签两字保持普通灰 */
   .pin-time { font-size:13.5px; color:#7d8597; font-variant-numeric:tabular-nums; }
   /* 🟡进行中 / ⚪失效 状态样式; 超偏≥10% 进行中=刺眼橙红闪烁(⚠️远离插针针尖, 可能在扫大流动性) */
   .pin-item.pending { border-color:#c9a227; background:linear-gradient(100deg,#2b2408 0%,#1d1b0c 55%,#12161c 100%); animation:pendingGlow 2s ease-in-out infinite; }
@@ -220,7 +221,8 @@
 <script>
 /* fapi 双域接管(2026-10-28): topMovers/ticker/klines 全部 REST 请求统一收口到
    REST_BASES + fapi(), 单域旧常量(REST/TICKER_URL/PIN_REST)已删除 */
-const WS_URL = "wss://fstream.yshyqxx.com/market/stream";
+const WS_BASES = ["wss://fstream.yshyqxx.com/market/stream", "wss://fstream.binance.com/stream"];   // 主=币安镜像, 末位=币安官方(代理环境可用/直连被墙; 官方无topMovers异动流但kline+aggTrade完整, 插针不受影响)
+let wsBaseIdx = 0;   // 当前WS候选(连续失败自动切换)
 /* Bitget 二源(2026-10-28 实测打通): wss://stream.bitget.cloud 国内域直连, 无 Origin 校验;
    v2 协议 candle1m 频道, snapshot 自带~300 根历史1mK线(免 REST), update 每秒推未收盘根,
    bar 时间戳前移⇒上一根收盘(无 x 字段)。镜像单点故障时由它独立推流。 */
@@ -232,29 +234,32 @@ const RENDER_LIMIT  = 40;       // DOM 中最多渲染的条数(性能关键, �
 /* ★ REST 域名双备份(2026-10-28 用户线索 4 域实测仅 cagxfucoftt.com 可用):
    fapi 全镜像同源, 主域挂掉自动切到备用域, 之后粘性使用新域(恢复后下轮再试主域)。
    WS 推送不掉线与此无关——WS 腿在别处(币安主 WS + Bitget 二源), 这里只护 REST 对账/修复腿。 */
-const REST_BASES = ["https://www.icnguxncf.com", "https://www.cagxfucoftt.com"];
+const REST_BASES = ["https://www.icnguxncf.com", "https://www.cagxfucoftt.com", "https://fapi.binance.com"];   // 末位=币安官方API(代理环境可用, 直连被墙, 仅当镜像全挂才用)
 let restBaseIdx = 0;
-async function fapi(path){   // fapi 路径请求(带查询串); 失败自动换域重试一次; 返回 json 或 null
+let restThrottleUntil = 0;   // 镜像限流封禁锁: 遇 418/429/too-many-requests 锁 60s, 锁内直接跳过不发请求(避免疯狂重试维持封禁)
+async function fapi(path){   // fapi 路径请求(带查询串); 候选池轮询(从上次成功域开始, 每个8s超时, 首个成功即粘性); 全部失败/限流返回 null
+  if (Date.now() < restThrottleUntil) return null;   // 限流锁内: 零请求, 等解封
   const tryOnce = async (base)=>{
     const ctl = new AbortController();
-    const tm = setTimeout(()=>ctl.abort(), 12000);
+    const tm = setTimeout(()=>ctl.abort(), 8000);
     try{
       const r = await fetch(base + path + (path.includes("?") ? "&" : "?") + "_t=" + Date.now(), {cache:"no-store", signal: ctl.signal});
-      return await r.json();
+      if (r.status === 418 || r.status === 429){ restThrottleUntil = Date.now() + 60000; return {__ban:true}; }
+      const j = await r.json();
+      if (j && (j.code === -1003 || /too many requests|banned/i.test(String(j.msg || "")))){ restThrottleUntil = Date.now() + 60000; return {__ban:true}; }
+      return j;
     } finally { clearTimeout(tm); }
   };
-  try{
-    const j = await tryOnce(REST_BASES[restBaseIdx]);
-    if (j !== null && j !== undefined) return j;
-    throw 0;
-  }catch(_){
-    const other = 1 - restBaseIdx;
+  const n = REST_BASES.length;
+  for (let k = 0; k < n; k++){
+    const i = (restBaseIdx + k) % n;
     try{
-      const j = await tryOnce(REST_BASES[other]);
-      if (j !== null && j !== undefined){ restBaseIdx = other; return j; }   // 切换并粘性
-      throw 0;
-    }catch(_2){ return null; }
+      const j = await tryOnce(REST_BASES[i]);
+      if (j && j.__ban) return null;                 // 限流: 已设 60s 锁, 本轮失败
+      if (j !== null && j !== undefined){ restBaseIdx = i; return j; }   // 成功即粘性记忆
+    }catch(_){}
   }
+  return null;
 }
 const FEISHU_WEBHOOK = "https://open.feishu.cn/open-apis/bot/v2/hook/6b7e0c87-9b6a-423b-8e03-2765d07a6740"; // 5M异动飞书推送
 
@@ -758,7 +763,10 @@ const chgMap   = {};   // symbol -> 24H涨跌幅%(榜单合流用, 与价格表�
 const highMap  = {};   // symbol -> 24H最高价(插针触24H高低标注用)
 const lowMap   = {};   // symbol -> 24H最低价
 let priceTs = 0;       // 价格表最近一次成功刷新时刻(榜单复用判定依据)
-async function refreshPrices(){   // 全量拉取全部合约 24h 行情(价格+成交额, 每轮轮询刷新; fapi 双域自动切换)
+async function refreshPrices(){   // 全量拉取全部合约 24h 行情(价格+成交额; fapi 自动换域; 60s节流)
+  if (priceTs && Date.now() - priceTs < 60000 && Object.keys(priceMap).length > 100){
+    return true;   // 节流复用: 60s 内已拉过且非空 → 直接复用(30s校准不再重复打全量24hr——该接口weight高, 是镜像限流封禁重灾区)
+  }
   const data = await fapi("/fapi/v1/ticker/24hr");
   if (Array.isArray(data)){
     for (const d of data){
@@ -1096,13 +1104,17 @@ function wsIngest(mover){
 }
 function connectWS(){
   try{ if (ws) { ws.onclose = null; ws.close(); } }catch(_){}
-  ws = new WebSocket(WS_URL);
+  ws = new WebSocket(WS_BASES[wsBaseIdx]);
+  const officialLeg = WS_BASES[wsBaseIdx] === "wss://fstream.binance.com/stream";
   ws.onopen = ()=>{
     wsAlive = true;
     lastMsgTime = Date.now();
-    /* 订阅 topMovers 实时异动流(秒级逐条推送) + btcusdt@aggTrade 保活心跳；
-       REST 30s 校准降级为断线补偿兜底，实时性完全由 WS 驱动 */
-    ws.send(JSON.stringify({method:"SUBSCRIBE", params:["topMovers", "btcusdt@aggTrade", ...Array.from(pinStreams)], id:1}));
+    /* 订阅实时流: 镜像腿=私有topMovers异动流+aggTrade保活+kline插针流;
+       官方腿(VPN/代理环境实测可达)无topMovers私有流——带上会被官方以非法流名拒绝整个SUBSCRIBE, 连上却零数据;
+       故官方腿只订标准流(aggTrade保活+kline), 插针监测不受影响, 仅异动流暂停。 */
+    const params = ["btcusdt@aggTrade", ...Array.from(pinStreams)];
+    if (!officialLeg) params.unshift("topMovers");
+    ws.send(JSON.stringify({method:"SUBSCRIBE", params, id:1}));
     setStatus("live");
     fetchMovers(true);   // ★ 无条件补拉: 断线期间漏掉的异动立即用 REST 找回(静默不响铃), restBusy+排队机制保证与 30s 校准/前台恢复互不丢失
     schedulePinRepair();   // ★ 同时用 REST K线修复断线窗口(内部节流, 与副连接互不干扰) */
@@ -1136,6 +1148,8 @@ function connectWS(){
     wsAlive = false;
     setStatus("err");
     failCount = Math.min(failCount + 1, 5);
+    /* 连续2次失败切换下一个候选域(镜像→官方), 不让坏域粘死 */
+    if (failCount >= 2){ wsBaseIdx = (wsBaseIdx + 1) % WS_BASES.length; failCount = 0; }
     const delay = [3000, 6000, 12000, 24000, 30000][Math.min(failCount-1, 4)];
     setTimeout(()=>{ if (!wsAlive) connectWS(); }, delay);
   };
@@ -1269,7 +1283,12 @@ let priceBootOk = false;
 async function bootPrices(attempt){
   if (priceBootOk) return;
   attempt = attempt || 1;
-  if (await refreshPrices()){ priceBootOk = true; return; }
+  if (await refreshPrices()){
+    priceBootOk = true;
+    pinRefreshTab();                       // 恢复后接上插针角标/文案, 不再停留在"数据源连接失败"(陈旧渲染)
+    if (curView === "pin") render();       // 插针视图即时刷新计数行
+    return;
+  }
   setTimeout(()=>bootPrices(attempt + 1), REST_RETRY_MS * Math.min(attempt, 5));
 }
 
@@ -1988,7 +2007,7 @@ function renderPinList(){
           <span><span class="lb">偏离 </span>${(pend && Math.abs(ev.dev) >= PIN_HOT_DEV) ? `<span class="hot-dev">${devTxt}${(ev.dev*100).toFixed(1)}%</span>` : `${devTxt}${(ev.dev*100).toFixed(1)}%`}</span>
           <span><span class="lb">回归 </span>${Math.min(ev.retr*100, 100).toFixed(0)}%</span>
           <span><span class="lb">量能 </span>${volTxt}</span>
-          <span><span class="lb">${pxLabel.trim()} </span>${fmtPrice(ev.px)}</span>
+          <span><span class="lb">${pxLabel.trim()} </span>${pend ? `<span class="px-val">${fmtPrice(ev.px)}</span>` : fmtPrice(ev.px)}</span>
           ${hl24}
         </div>
         <div class="pin-time">${tsFmt(ev.ts)}${pend ? " · 待回归≥60%" : ""}${(pend && Math.abs(ev.dev) >= PIN_HOT_DEV) ? " · ⚠️ 超偏≥10%" : ""}${ev.verify ? ` · <span class="pin-verify ${ev.verify}">${ev.verify === "win" ? "✅" : "❌"} 30分钟后 ${ev.verifyPct >= 0 ? "+" : ""}${ev.verifyPct.toFixed(2)}%</span>` : ""}${ev.reentry ? ` · 🎯 ${tsFmt(ev.reentry)} 进入回踩区` : ""}</div>`;
