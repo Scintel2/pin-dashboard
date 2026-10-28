@@ -1,0 +1,1826 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>币安市场异动 · 实时监控</title>
+<link rel="icon" href="data:,">
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html { scrollbar-width:thin; scrollbar-color:#2a323d #0b0e11; }
+  ::-webkit-scrollbar { width:8px; height:8px; }
+  ::-webkit-scrollbar-track { background:#0b0e11; }
+  ::-webkit-scrollbar-thumb { background:#2a323d; border-radius:4px; }
+  ::-webkit-scrollbar-thumb:hover { background:#3a4759; }
+  body { background:#0b0e11; color:#eaecef; font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif; min-height:100vh; -webkit-font-smoothing:antialiased; }
+  .wrap { max-width:640px; margin:0 auto; padding:16px 12px 40px; }
+  header { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
+  h1 { font-size:20px; font-weight:600; letter-spacing:.5px; display:flex; align-items:center; gap:8px; }
+  .dot { width:8px; height:8px; border-radius:50%; background:#2ebd85; box-shadow:0 0 8px #2ebd85; animation:pulse 1.6s infinite; }
+  .dot.err { background:#f6465d; box-shadow:0 0 8px #f6465d; }
+  @keyframes pulse { 50% { opacity:.35; } }
+  .meta { font-size:12px; color:#848e9c; text-align:right; line-height:1.6; }
+  .mode { font-weight:600; }
+  .mode.live { color:#2ebd85; } .mode.err { color:#f6465d; }
+  .lastmv { color:#848e9c; }
+  .tabs { display:flex; gap:8px; overflow-x:auto; padding-bottom:10px; scrollbar-width:none; }
+  .tabs::-webkit-scrollbar { display:none; }
+  .tab { flex:0 0 auto; padding:8px 16px; border-radius:16px; font-size:13px; color:#848e9c; background:#181c23; border:1px solid #232a33; cursor:pointer; transition:all .15s; user-select:none; }
+  .tab:hover { color:#eaecef; }
+  .tab:focus-visible { outline:2px solid #fcd535; outline-offset:2px; }
+  .tab.on { background:#2b3648; color:#fcd535; border-color:#3a4759; font-weight:600; }
+  .tabs.period { padding-bottom:4px; }
+  .tabs.period .tab { padding:4px 12px; font-size:12px; color:#a5adbb; background:transparent; }
+  .tabs.period .tab:hover { color:#eaecef; }
+  .tabs.period .tab.on { background:#1f2735; color:#fcd535; border-color:#39485a; }
+  .rowwrap { display:flex; align-items:center; gap:6px; margin-bottom:12px; }
+  .rowwrap .tabs { flex:1 1 auto; min-width:0; }   /* 占满剩余宽度，滚动区最大化 */
+  .dimlab { font-size:11px; color:#848e9c; flex:0 0 auto; }
+  .toolbar { display:flex; justify-content:space-between; align-items:center; margin:4px 0 12px; font-size:12px; color:#848e9c; }
+  .sound { cursor:pointer; background:#181c23; border:1px solid #232a33; color:#848e9c; border-radius:8px; padding:4px 12px; font-size:12px; transition:all .15s; }
+  .sound:focus-visible { outline:2px solid #fcd535; outline-offset:2px; }
+  .sound.on { color:#fcd535; border-color:#3a4759; }
+  .list { display:flex; flex-direction:column; gap:8px; }
+  .item { position:relative; cursor:pointer; display:grid; grid-template-columns:minmax(0,1fr) auto; grid-template-rows:auto auto; grid-template-areas:"sym pctrow" "ts pricow"; gap:4px 12px; background:#12161c; border:1px solid #1e242c; border-radius:12px; padding:12px 16px; transition:border-color .2s, transform .08s; }
+  .icon { width:24px; height:24px; border-radius:6px; display:inline-flex; align-items:center; justify-content:center; flex:0 0 auto; vertical-align:middle; }
+  .icon.cry-emoji { font-size:28px; line-height:1; }
+  .icon.rocket-emoji { font-size:26px; line-height:1; }
+  .icon svg { display:block; }
+  .sym { grid-area:sym; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .sym b { font-size:17px; font-weight:700; letter-spacing:.3px; }
+  .tag { font-size:10px; color:#848e9c; background:#1e242c; border-radius:4px; padding:2px 8px; }
+  .ts { grid-area:ts; font-size:14px; color:#7d8597; font-variant-numeric:tabular-nums; }
+  .vol { display:block; font-size:14px; font-weight:700; color:#b7c0cc; font-variant-numeric:tabular-nums; white-space:nowrap; margin-bottom:2px; }
+  .vol .plabel { font-size:12px; font-weight:400; color:#848e9c; }
+  .pctrow { grid-area:pctrow; display:flex; align-items:center; gap:7px; justify-self:end; }
+  .pct { font-size:16px; font-weight:700; font-variant-numeric:tabular-nums; }
+  .pct.mid { font-size:18px; }   /* 3%+ 涨跌幅略大(不超过5%大异动的22px) */
+  .up { color:#f6465d; } .down { color:#2ebd85; }
+  .pricow { grid-area:pricow; display:flex; align-items:center; justify-self:end; }
+  .price { font-size:14px; font-weight:700; font-variant-numeric:tabular-nums; white-space:nowrap; color:#b7c0cc; }
+  .price .plabel { font-size:12px; font-weight:400; color:#848e9c; }
+  .kind { font-size:13px; color:#b7c0cc; }
+  .empty { text-align:center; color:#848e9c; padding:48px 0; font-size:13px; }
+  footer { text-align:center; margin-top:16px; font-size:11px; color:#707a8a; }
+
+  /* ===== 类型下拉选择器(antd Select 交互规范 · 内联展开不遮挡) ===== */
+  .sel { position:relative; flex:1 1 auto; min-width:0; }
+  .sel.disabled { opacity:.35; pointer-events:none; }
+  .sel-btn { width:100%; display:flex; align-items:center; justify-content:space-between; gap:8px; padding:0 12px; height:36px; background:#181c23; border:1px solid #232a33; border-radius:10px; font-size:13px; font-weight:600; color:#eaecef; cursor:pointer; user-select:none; transition:border-color .15s; }
+  .sel-btn:hover { border-color:#3a4759; }
+  .sel-btn:focus-visible { outline:2px solid #fcd535; outline-offset:2px; }
+  .sel-val { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .sel-arrow { font-size:10px; color:#848e9c; transition:transform .2s; flex:0 0 auto; }
+  .sel.open .sel-arrow { transform:rotate(180deg); }
+  /* 菜单为独立整行、内联展开(文档流) + 3列紧凑网格: 不再浮层遮挡周期行 */
+  .sel-menu { display:none; margin:6px 0 10px; background:#181c23; border:1px solid #2a323d; border-radius:10px; padding:4px; }
+  .sel-menu.open { display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:2px; animation:menuIn .15s ease; }
+  @keyframes menuIn { from { transform:translateY(-4px); opacity:0; } to { transform:none; opacity:1; } }
+  .sel-opt { display:flex; align-items:center; justify-content:center; gap:4px; padding:8px 4px; border-radius:6px; font-size:13px; color:#b7c0cc; cursor:pointer; user-select:none; white-space:nowrap; }
+  .sel-opt:hover, .sel-opt.kb-active { background:#1f2735; color:#eaecef; }
+  .sel-opt[aria-selected="true"] { color:#fcd535; font-weight:600; }
+  .sel-opt[aria-selected="true"]::after { content:"✓"; font-size:12px; font-weight:700; }
+  .tabs.disabled { opacity:.35; pointer-events:none; }
+  /* 24H榜单标签: 类型行右侧, 与类型下拉互斥的视图切换(小号tab) */
+  .tabs.ranktabs { display:flex; gap:6px; flex:0 0 auto; padding-bottom:0; }
+  .tabs.ranktabs .tab { display:inline-flex; align-items:center; padding:0 10px; height:36px; font-size:12px; }
+
+  /* ===== 24H 榜单行(复用 .item 条幅布局) ===== */
+  .rank-medal { font-size:20px; line-height:1; flex:0 0 auto; }
+  .rank-no { font-size:12px; font-weight:700; color:#848e9c; background:#1e242c; border-radius:4px; padding:2px 8px; font-variant-numeric:tabular-nums; flex:0 0 auto; }
+
+  /* ===== 5m 大异动重点标注 ===== */
+  .item.alert-up, .item.alert-down { border-width:2px; }
+  .item.alert-up { border-color:#f6465d; background:linear-gradient(100deg,#3d1418 0%,#1a1418 55%,#12161c 100%); animation:upGlow 1.8s ease-in-out 4; }
+  .item.alert-down { border-color:#2ebd85; background:linear-gradient(100deg,#0f2e24 0%,#132a1c 55%,#12161c 100%); animation:downGlow 1.8s ease-in-out 4; }
+  @keyframes upGlow { 0%,100%{ box-shadow:0 0 8px rgba(246,70,93,.22);} 50%{ box-shadow:0 0 24px rgba(246,70,93,.55);} }
+  @keyframes downGlow { 0%,100%{ box-shadow:0 0 8px rgba(46,189,133,.22);} 50%{ box-shadow:0 0 24px rgba(46,189,133,.55);} }
+  .item.alert-up .pct, .item.alert-down .pct { font-size:22px; }
+  .item.alert-up .sym b, .item.alert-down .sym b { font-size:18px; }
+  .item.alert-up .icon, .item.alert-down .icon { width:28px; height:28px; border-radius:8px; }
+  .badge { font-size:11px; font-weight:700; padding:2px 8px; border-radius:6px; letter-spacing:.5px; flex:0 0 auto; }
+  .badge.up-badge { color:#fff; background:#f6465d; box-shadow:0 0 8px rgba(246,70,93,.5); }
+  .badge.down-badge { color:#fff; background:#2ebd85; box-shadow:0 0 8px rgba(46,189,133,.5); }
+
+  /* ===== 点击复制反馈 ===== */
+  .item:hover { border-color:#3a4759; }
+  .item.alert-up:hover { border-color:#ff7583; }
+  .item.alert-down:hover { border-color:#46e0ac; }
+  .item.copied { border-color:#fcd535; }
+  .copybadge { font-size:11px; font-weight:700; padding:2px 8px; border-radius:6px; letter-spacing:.5px; flex:0 0 auto; animation:tipIn .18s ease; }
+  .copybadge.ok { color:#12161c; background:#fcd535; }
+  .copybadge.bad { color:#fff; background:#f6465d; }
+  @keyframes tipIn { from { transform:scale(.6); opacity:0; } to { transform:scale(1); opacity:1; } }
+  .item:active { transform:scale(.992); }
+
+  /* ===== 📌 插针视图(周期栏标签切换, 渲染进主列表) ===== */
+  .tab.pin-tab { display:inline-flex; align-items:center; gap:4px; color:#fcd535; border-color:#3a4759; background:rgba(252,213,53,.05); }
+  .tab.pin-tab:hover { color:#ffe680; }
+  .tab.pin-tab.on { background:#33290f; color:#fcd535; border-color:#fcd535; box-shadow:0 0 8px rgba(252,213,53,.25); }
+  .tab.pin-tab .pin-cnt { font-size:10px; color:#0b0e11; background:#fcd535; border-radius:8px; padding:0 5px; min-width:14px; text-align:center; font-weight:700; }
+  .tab.pin-tab.disabled { opacity:.35; pointer-events:none; }
+  .tab.pt.disabled { opacity:.35; pointer-events:none; }
+  .pin-item { background:#12161c; border:1px solid #1e242c; border-radius:12px; padding:12px 16px; display:flex; gap:14px; align-items:center; }
+  .pin-main { flex:1 1 auto; min-width:0; display:flex; flex-direction:column; gap:5px; }
+  .pin-side { flex:0 0 auto; display:flex; align-items:center; }   /* 右侧大方向箭头区(原空白区) */
+  .pin-arrow { width:56px; height:56px; border-radius:14px; display:flex; align-items:center; justify-content:center; flex:0 0 auto; }
+  .pin-arrow svg { width:46px; height:46px; display:block; }
+  .pin-arrow.low  { background:rgba(46,189,133,.10); border:1.5px solid rgba(46,189,133,.45); box-shadow:0 0 12px rgba(46,189,133,.25); } .pin-arrow.low  svg path { fill:#2ebd85; }   /* 扫下方=绿·向下(红涨绿跌, 含进行中) */
+  .pin-arrow.high { background:rgba(246,70,93,.10);  border:1.5px solid rgba(246,70,93,.45);  box-shadow:0 0 12px rgba(246,70,93,.25); }  .pin-arrow.high svg path { fill:#f6465d; }  /* 扫上方=红·向上(红涨绿跌, 含进行中) */
+  .pin-arrow.fail { background:rgba(112,122,138,.06); border:1.5px solid rgba(112,122,138,.3); }                     .pin-arrow.fail svg path { fill:#707a8a; }
+  .pin-item.strong { border-color:#fcd535; background:linear-gradient(100deg,#33290f 0%,#1c1913 55%,#12161c 100%); animation:pinGlow 1.8s ease-in-out 4; }
+  @keyframes pinGlow { 0%,100%{ box-shadow:0 0 8px rgba(252,213,53,.2);} 50%{ box-shadow:0 0 22px rgba(252,213,53,.5);} }
+  .pin-row1 { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .pin-sym { font-size:17px; font-weight:700; letter-spacing:.3px; }
+  .pin-dir { font-size:12px; font-weight:700; padding:2px 8px; border-radius:6px; flex:0 0 auto; }
+  .pin-dir.sweep-low  { color:#fff; background:#f6465d; box-shadow:0 0 8px rgba(246,70,93,.45); }   /* 扫下方=猎杀多头止损·偏多=红 */
+  .pin-dir.sweep-high { color:#fff; background:#2ebd85; box-shadow:0 0 8px rgba(46,189,133,.45); }  /* 扫上方=猎杀空头止损·偏空=绿 */
+  .pin-tag { font-size:11px; color:#848e9c; background:#1e242c; border-radius:4px; padding:2px 8px; }
+  .pin-row2 { display:flex; gap:4px 16px; flex-wrap:wrap; font-size:15px; color:#b7c0cc; font-variant-numeric:tabular-nums; }
+  .pin-row2 .lb { color:#848e9c; }
+  .pin-time { font-size:13.5px; color:#7d8597; font-variant-numeric:tabular-nums; }
+  /* 🟡进行中 / ⚪失效 状态样式; 超偏≥10% 进行中=刺眼橙红闪烁(⚠️远离插针针尖, 可能在扫大流动性) */
+  .pin-item.pending { border-color:#c9a227; background:linear-gradient(100deg,#2b2408 0%,#1d1b0c 55%,#12161c 100%); animation:pendingGlow 2s ease-in-out infinite; }
+  @keyframes pendingGlow { 0%,100%{ box-shadow:0 0 6px rgba(201,162,39,.22);} 50%{ box-shadow:0 0 18px rgba(201,162,39,.6);} }
+  /* 进行中卡片: 右侧大箭头按方向循环跳动(下插向下跳/上插向上跳) */
+  .pin-item.pending .pin-arrow.low svg  { animation:arrowDriftDown 1.2s ease-in-out infinite; }
+  .pin-item.pending .pin-arrow.high svg { animation:arrowDriftUp 1.2s ease-in-out infinite; }
+  @keyframes arrowDriftDown { 0%,100%{ transform:translateY(-3px);} 50%{ transform:translateY(5px);} }
+  @keyframes arrowDriftUp   { 0%,100%{ transform:translateY(5px);} 50%{ transform:translateY(-3px);} }
+  .pin-item.pending.hot { border-color:#ff5e2b; background:linear-gradient(100deg,#3a1504 0%,#2b0f06 55%,#12161c 100%); animation:pinHotGlow 1.1s ease-in-out infinite; }
+  @keyframes pinHotGlow { 0%,100%{ box-shadow:0 0 10px rgba(255,94,43,.35);} 50%{ box-shadow:0 0 26px rgba(255,94,43,.85);} }
+  .pin-row2 .hot-dev { color:#ff8a4d; font-weight:800; text-shadow:0 0 8px rgba(255,94,43,.8); font-size:17px; }
+  .pin-item.failed  { opacity:.45; border-color:#232a33; }
+  .pin-dir.pending  { color:#0b0e11; background:#fcd535; box-shadow:0 0 8px rgba(252,213,53,.4); }   /* 进行中=黄 */
+  .pin-dir.failed   { color:#0b0e11; background:#707a8a; }                                      /* 未回归失效=灰 */
+  /* 趋势标签 + 逆势淡化 */
+  .pin-trend { font-size:11px; font-weight:600; padding:2px 8px; border-radius:6px; flex:0 0 auto; white-space:nowrap; }
+  .pin-trend.up   { color:#f6465d; background:rgba(246,70,93,.12); border:1px solid rgba(246,70,93,.4); }   /* 趋势多=红(涨色) */
+  .pin-trend.down { color:#2ebd85; background:rgba(46,189,133,.12); border:1px solid rgba(46,189,133,.4); } /* 趋势空=绿(跌色) */
+  .pin-trend.flat, .pin-trend.na { color:#848e9c; background:#1e242c; border:1px solid #2a323d; }
+  .pin-item.cross { opacity:.4; }
+  .pin-tag.cross-tag { color:#f6465d; border:1px solid rgba(246,70,93,.4); background:rgba(246,70,93,.08); }
+  /* ===== 插针卡增强: 无量/回踩区/24H高低/30分钟自证(红涨绿跌) ===== */
+  .pin-tag.thin { color:#c9a227; border:1px solid rgba(201,162,39,.4); background:rgba(201,162,39,.08); }
+  .pin-tag.zone { color:#fcd535; border:1px solid rgba(252,213,53,.55); background:rgba(252,213,53,.14); animation:zonePulse 1.6s ease-in-out infinite; }
+  @keyframes zonePulse { 0%,100%{ box-shadow:0 0 4px rgba(252,213,53,.2);} 50%{ box-shadow:0 0 14px rgba(252,213,53,.55);} }
+  .pin-hl24 { color:#848e9c; } .pin-hl24.touch { color:#ff8a5d; font-weight:700; text-shadow:0 0 8px rgba(255,138,93,.35); }
+  .pin-verify.win { color:#f6465d; font-weight:600; } .pin-verify.lose { color:#2ebd85; font-weight:600; }
+  .pin-tab .pin-cnt.pend { background:#c9a227; }
+
+  /* ===== 无障碍：降低动效 ===== */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration:.01ms !important; animation-iteration-count:1 !important;
+      transition-duration:.01ms !important;
+    }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1><span class="dot" id="dot"></span>市场异动</h1>
+    <div class="meta">币安合约 · WebSocket 实时<br><span id="status">连接中…</span></div>
+  </header>
+
+  <div class="rowwrap"><span class="dimlab">类型</span>
+    <div class="sel" id="catSel">
+      <div class="sel-btn" id="catSelBtn" role="combobox" aria-haspopup="listbox" aria-expanded="false" aria-controls="catMenu" tabindex="0">
+        <span class="sel-val" id="catSelVal">全部</span><span class="sel-arrow">▾</span>
+      </div>
+    </div>
+    <div class="tabs ranktabs" id="rankTabs" role="group" aria-label="24H榜单视图"></div>
+  </div>
+  <div class="sel-menu" id="catMenu" role="listbox" aria-label="异动类型选择"></div>
+  <div class="rowwrap"><span class="dimlab">周期</span><div class="tabs period" id="periodTabs"></div></div>
+  <div class="toolbar">
+    <span id="count"></span>
+    <span style="display:flex;gap:8px;">
+      <button class="sound" id="sound">🔔 声音关</button>
+      <button class="sound" id="testSnd" title="试播铃声：单击=正常提示(aa) 双击=5m大涨大跌(zzz)">🔊 测试铃声</button>
+      <button class="sound" id="feishuBtn" title="5M大异动+✨强插针推送飞书（双击按钮可测试推送）">📮 飞书 开</button>
+    </span>
+  </div>
+  <div class="list" id="list"></div>
+  <footer>数据来自币安公开行情接口 · 仅供个人监控参考<span id="pushStatus"></span></footer>
+  <!-- 本地铃声(相对路径, 与HTML同目录): 正常提示 Canopus.ogg / 5m大涨大跌 Star_Struck.ogg / 进行中 ZZ.mp3 -->
+  <audio id="sndNormal" src="Canopus.ogg" preload="auto"></audio>
+  <audio id="sndBig" src="Star_Struck.ogg" preload="auto"></audio>
+  <audio id="sndZZ" src="ZZ.mp3" preload="auto"></audio>
+</div>
+
+<script>
+const REST   = "https://www.icnguxncf.com/fapi/v1/topMovers";
+const WS_URL = "wss://fstream.yshyqxx.com/market/stream";
+const CALIBRATE_MS  = 30000;   // REST 兜底校准(30s)，WS 驱动实时，REST 防漏
+const REST_RETRY_MS = 3000;    // 初始拉取失败重试间隔
+const MAX_ITEMS     = 500;      // 内存中保留的最大条数
+const RENDER_LIMIT  = 40;       // DOM 中最多渲染的条数(性能关键, 减少卡顿)
+const FEISHU_WEBHOOK = "https://open.feishu.cn/open-apis/bot/v2/hook/6b7e0c87-9b6a-423b-8e03-2765d07a6740"; // 5M异动飞书推送
+
+const CATS = [
+  ["all","全部", e=>true],
+  ["up","涨", e=>/UP|HIGH_VOLUME_RISE/.test(e.eventType)],
+  ["down","跌", e=>/DOWN|HIGH_VOLUME_FALL/.test(e.eventType)],
+  ["pullback","冲高回落", e=>e.eventType==="PULLBACK"],
+  ["rally","探底回升", e=>e.eventType==="RALLY"],
+  ["high","新高", e=>e.eventType.includes("UP_BREAKTHROUGH")],
+  ["low","新低", e=>e.eventType.includes("DOWN_BREAKTHROUGH")],
+  ["volup","放量涨", e=>e.eventType.startsWith("HIGH_VOLUME_RISE")],
+  ["voldown","放量跌", e=>e.eventType.startsWith("HIGH_VOLUME_FALL")],
+];
+
+/* 时间周期筛选选项：m5brk = 5M周期 ∪ 今日新高/新低 组合视图 */
+const PERIODS = [
+  ["all","全部"],
+  ["5m","5M"],["2h","2H"],["1d","1D"],
+  ["m5brk","5M/新高+新低"],
+];
+
+let curCat = "all";
+let curPeriod = "all";
+let curView = "movers";   // 视图: movers=异动流 | pin=📌插针事件流
+let pinUnread = 0;        // 插针视图未读计数(标签角标)
+let movers = [];
+let seen = new Set();
+let soundOn = false;
+let wsAlive = false;
+let lastMsgTime = 0;      // 最后收到任何WS消息的时间(watchdog依据)
+let lastMoverTs = 0;      // 最后一条异动的时间戳
+let failCount = 0;        // 连续重连失败计数
+let feishuOn = true;      // 5M大异动飞书推送开关(默认开)
+
+const $ = id => document.getElementById(id);
+
+/* ---------- 筛选 ---------- */
+/* tab 生成器：统一点击/键盘(Enter,Space)/ARIA，两行 tab 复用 */
+function makeTab(label, on, onClick){
+  const t = document.createElement("div");
+  t.className = "tab" + (on ? " on" : "");
+  t.textContent = label;
+  t.setAttribute("role", "button");
+  t.tabIndex = 0;
+  t.setAttribute("aria-pressed", on ? "true" : "false");
+  t.onclick = onClick;
+  t.onkeydown = ev=>{ if (ev.key==="Enter" || ev.key===" "){ ev.preventDefault(); onClick(); } };
+  return t;
+}
+function selectTab(container, t){   // 选中态 + aria 同步切换
+  container.querySelectorAll(".tab").forEach(x=>{
+    const me = x === t;
+    x.classList.toggle("on", me);
+    x.setAttribute("aria-pressed", me ? "true" : "false");
+  });
+}
+/* ---------- 类型下拉(9个异动类型) + 24H榜单标签(视图切换, 与类型互斥) ---------- */
+let curRank = null;        // null=异动流视图 | "up"=涨幅榜 | "down"=跌幅榜
+const isRankMode = ()=> curRank !== null;
+const selEl = $("catSel"), selBtnEl = $("catSelBtn"), selMenuEl = $("catMenu"), selValEl = $("catSelVal"), periodEl = $("periodTabs");
+let selOpen = false;
+let selOptEls = [];   // 菜单选项节点
+let selKbIdx = -1;    // 键盘高亮索引
+function labelOfCat(key){
+  const c = CATS.find(x=>x[0]===key);
+  return c ? c[1] : key;
+}
+function buildSelMenu(){
+  selMenuEl.innerHTML = "";
+  selOptEls = [];
+  const mkOpt = (key, label)=>{
+    const o = document.createElement("div");
+    o.className = "sel-opt";
+    o.setAttribute("role", "option");
+    o.tabIndex = -1;
+    o.dataset.key = key;
+    o.innerHTML = `<span>${label}</span>`;
+    o.onclick = ()=>selectCat(key);
+    selOptEls.push(o);
+    selMenuEl.appendChild(o);
+  };
+  CATS.forEach(([key,label])=>mkOpt(key,label));
+}
+function refreshSelUI(){
+  selValEl.textContent = labelOfCat(curCat);
+  selOptEls.forEach(o=>o.setAttribute("aria-selected", o.dataset.key===curCat ? "true" : "false"));
+}
+function setSelKb(idx){
+  selKbIdx = idx;
+  selOptEls.forEach((o,i)=>o.classList.toggle("kb-active", i===idx));
+}
+function openSel(open){
+  selOpen = open;
+  selEl.classList.toggle("open", open);          // 箭头旋转
+  selMenuEl.classList.toggle("open", open);      // 菜单为独立行, 自身显隐
+  selBtnEl.setAttribute("aria-expanded", open ? "true" : "false");
+  setSelKb(open ? selOptEls.findIndex(o=>o.dataset.key===curCat) : -1);
+}
+function selectCat(key){
+  curCat = key;
+  curRank = null;                 // 选中异动类型即退出榜单视图
+  curView = "movers";             // 选中异动类型即退出插针视图
+  pinRefreshTab();
+  openSel(false);
+  refreshSelUI();
+  refreshRankTabsUI();
+  updateFilterRows();
+  stopRankTimer();
+  render();
+}
+/* 24H榜单标签: 点击切换榜单视图, 再点已选中的即取消回到异动流 */
+function selectRank(dir){
+  curRank = (curRank === dir) ? null : dir;
+  curView = "movers";             // 切榜单即退出插针视图
+  pinRefreshTab();
+  openSel(false);
+  refreshRankTabsUI();
+  updateFilterRows();
+  if (isRankMode()){ ensureRank(); render(); }
+  else { stopRankTimer(); render(); }
+}
+selBtnEl.onclick = ()=>{ if (!isRankMode()) openSel(!selOpen); };
+/* 键盘：仅在菜单收起时拦截"打开"并阻断冒泡(防打开事件被 document 层误当菜单内导航/确认)；
+   展开后的按键冒泡至 document 统一处理(↑↓导航 / Enter确认 / Esc关闭) */
+selBtnEl.onkeydown = ev=>{
+  if (isRankMode() || selOpen) return;
+  if (ev.key==="Enter" || ev.key===" " || ev.key==="ArrowDown"){
+    ev.preventDefault();
+    ev.stopPropagation();
+    openSel(true);
+  }
+};
+document.addEventListener("click", ev=>{
+  if (selOpen && !selEl.contains(ev.target) && !selMenuEl.contains(ev.target)) openSel(false);   // 外部点击关闭
+});
+document.addEventListener("keydown", ev=>{
+  if (!selOpen) return;
+  if (ev.key==="Escape"){ openSel(false); selBtnEl.focus(); }
+  else if (ev.key==="ArrowDown" || ev.key==="ArrowUp"){
+    ev.preventDefault();
+    const n = selOptEls.length;
+    const i = ev.key==="ArrowDown" ? Math.min(selKbIdx+1, n-1) : Math.max(selKbIdx-1, 0);
+    setSelKb(i);
+  } else if (ev.key==="Enter" && selKbIdx >= 0){
+    ev.preventDefault();
+    selectCat(selOptEls[selKbIdx].dataset.key);
+  }
+});
+/* 24H榜单标签生成(复用tab统一样式, 小号) */
+const rankTabsEl = $("rankTabs");
+const rankTabEls = [];
+[["up","📈 涨幅榜"],["down","📉 跌幅榜"]].forEach(([dir,label])=>{
+  const t = makeTab(label, false, ()=>selectRank(dir));
+  t.dataset.rank = dir;
+  rankTabEls.push(t);
+  rankTabsEl.appendChild(t);
+});
+function refreshRankTabsUI(){
+  rankTabEls.forEach(t=>{
+    const on = t.dataset.rank === curRank;
+    t.classList.toggle("on", on);
+    t.setAttribute("aria-pressed", on ? "true" : "false");
+  });
+}
+/* 视图置灰: 榜单/插针视图下类型下拉禁用; 周期tab仅在榜单/插针视图下逐个置灰(插针标签自身除外) */
+function updateFilterRows(){
+  const dis = isRankMode() || curView === "pin";
+  selEl.classList.toggle("disabled", dis);
+  selBtnEl.setAttribute("aria-disabled", dis ? "true" : "false");
+  periodEl.querySelectorAll(".tab.pt").forEach(t=>t.classList.toggle("disabled", dis));
+  periodEl.setAttribute("aria-disabled", isRankMode() ? "true" : "false");
+}
+buildSelMenu();
+refreshSelUI();
+refreshRankTabsUI();
+updateFilterRows();
+
+/* 时间周期筛选 + 📌插针视图标签(视图切换, 与周期筛选互不干扰)
+   顺序: 全部 → 📌插针 → 5M → 2H → 1D → 5M/新高+新低 */
+periodEl.setAttribute("role", "group");
+periodEl.setAttribute("aria-label", "时间周期筛选");
+let pinTabEl = null;   // 插针标签引用(供 pinRefreshTab 同步选中态/角标)
+PERIODS.forEach(([key,label])=>{
+  const t = makeTab(label, key==="all", ()=>{
+    if (isRankMode() || curView === "pin") return;   // 榜单/插针视图下周期筛选已禁用
+    curPeriod = key;
+    selectTab(periodEl, t);
+    render();
+  });
+  t.classList.add("pt");   // 周期tab标记: 插针视图下单独置灰(不影响插针标签自身)
+  periodEl.appendChild(t);
+  /* "全部"渲染完后紧跟插针标签(用户要求: 插针在全部之后、5M之前) */
+  if (key === "all"){
+    pinTabEl = makeTab("📌 插针", false, ()=>{
+      curView = (curView === "pin") ? "movers" : "pin";
+      if (curView === "pin"){ curRank = null; refreshRankTabsUI(); stopRankTimer(); pinUnread = 0; }
+      pinRefreshTab();   // 进出都要同步标签选中态(退出时摘除高亮)
+      updateFilterRows();
+      render();
+    });
+    pinTabEl.classList.add("pin-tab");
+    pinTabEl.setAttribute("aria-label", "插针事件流视图");
+    periodEl.appendChild(pinTabEl);
+  }
+});
+function pinRefreshTab(){
+  if (!pinTabEl) return;
+  pinTabEl.classList.toggle("on", curView === "pin");
+  pinTabEl.setAttribute("aria-pressed", curView === "pin" ? "true" : "false");
+  /* 双角标: 金色=未读确认数(进入清零) 黄色=进行中数(实时常显) */
+  const pendN = pinEvents.filter(e=>e.status === "pending").length;
+  let html = "📌 插针";
+  if (pinUnread > 0) html += ` <span class="pin-cnt">${pinUnread}</span>`;
+  if (pendN > 0) html += ` <span class="pin-cnt pend">${pendN}</span>`;
+  pinTabEl.innerHTML = html;
+}
+
+/* 周期匹配：all 不过滤；m5brk = 5M周期 ∪ 今日新高/新低(精确 DAY 前缀，排除周/月) */
+function periodMatch(e){
+  if (curPeriod === "all") return true;
+  if (curPeriod === "m5brk"){
+    return String(e.period||"").toLowerCase() === "5m"
+      || e.eventType === "DAY_UP_BREAKTHROUGH" || e.eventType === "DAY_DOWN_BREAKTHROUGH";
+  }
+  return String(e.period||"").toLowerCase() === curPeriod;
+}
+
+/* ---------- 工具 ---------- */
+function typeText(e){
+  const et = e.eventType, nt = e.noticeType, pd = e.period || "";
+  if (nt === "PRICE_CHANGE"){
+    const dir = et.startsWith("UP") ? "涨" : "跌";
+    const lv  = {"1":"小","2":"中","3":"大"}[et.split("_")[1]] || "";
+    return pd + lv + dir;
+  }
+  const map = {
+    DAY_UP_BREAKTHROUGH:"今日新高", DAY_DOWN_BREAKTHROUGH:"今日新低",
+    WEEK_UP_BREAKTHROUGH:"本周新高", WEEK_DOWN_BREAKTHROUGH:"本周新低",
+    MONTH_UP_BREAKTHROUGH:"月内新高", MONTH_DOWN_BREAKTHROUGH:"月内新低",
+    PULLBACK:"冲高回落", RALLY:"探底回升",
+  };
+  if (map[et]) return map[et];
+  if (et.startsWith("HIGH_VOLUME_RISE")) return "放量涨 " + pd;
+  if (et.startsWith("HIGH_VOLUME_FALL")) return "放量跌 " + pd;
+  return et;
+}
+
+/* ---------- 异动图标(SVG) ---------- */
+function iconFor(e){
+  const et = e.eventType, nt = e.noticeType;
+  const W = 'stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" fill="none"';
+  const UP = '#f6465d', DOWN = '#2ebd85';
+  const arrows = {
+    1: `<path d="M7,19 L19,7 M12,7 H19 V14" ${W}/>`,
+    2: `<path d="M5,18 L12,11 M7.5,11 H12 V15.5 M14,18 L21,11 M16.5,11 H21 V15.5" ${W}/>`,
+    3: `<path d="M4,17 L9,12 M5.5,12 H9 V15.5 M10.5,17 L15.5,12 M12,12 H15.5 V15.5 M17,17 L22,12 M18.5,12 H22 V15.5" ${W}/>`,
+  };
+  const steep = `<path d="M8,21 L19,6 M13,6 H19 V12" ${W}/>`;
+  const flipOpen = '<g transform="scale(1,-1) translate(0,-26)">', flipClose = '</g>';
+  const hill = `<path d="M4,17 H8 C10,6 16,6 18,17 H22" ${W}/>`;
+  const valley = `<path d="M4,9 H8 C10,20 16,20 18,9 H22" ${W}/>`;
+  const brkUp = `<path d="M4,17 H13 L20,10 M14,10 H20 M20,10 V16" ${W}/>`;
+  let bg = '#848e9c', inner = '';
+  if (nt === "PRICE_CHANGE"){
+    const n = et.split("_")[1] || '1';
+    if (et.startsWith("UP"))         { bg = UP;   inner = arrows[n]; }
+    else                              { bg = DOWN; inner = flipOpen + arrows[n] + flipClose; }
+  } else if (et === "PULLBACK")      { bg = DOWN; inner = hill; }
+  else if (et === "RALLY")           { bg = UP;   inner = valley; }
+  else if (et.includes("UP_BREAKTHROUGH"))   { bg = UP;   inner = brkUp; }
+  else if (et.includes("DOWN_BREAKTHROUGH")) { bg = DOWN; inner = flipOpen + brkUp + flipClose; }
+  else if (et.startsWith("HIGH_VOLUME_RISE")){ bg = UP;   inner = steep; }
+  else if (et.startsWith("HIGH_VOLUME_FALL")){ bg = DOWN; inner = flipOpen + steep + flipClose; }
+  return `<span class="icon" style="background:${bg}"><svg width="18" height="18" viewBox="0 0 26 26">${inner}</svg></span>`;
+}
+/* 5m 大异动专属图标 */
+const ROCKET_ICON = `<span class="icon rocket-emoji">🚀</span>`;
+const CRY_ICON = `<span class="icon cry-emoji">😭</span>`;
+/* 去重 key：按 币种+事件类型+时间 去重(不含 id)。
+   币安对同一事件会生成多条不同 id 的记录(价格持续突破时每档生成一条)，
+   按 symbol+eventType+createTimestamp 去重可合并这类重复 */
+function keyOf(e){ return e.symbol+"|"+e.eventType+"|"+e.createTimestamp; }
+const pad2 = n => String(n).padStart(2,"0");
+function tsFmt(ms){
+  const d = new Date(ms);
+  return `${pad2(d.getMonth()+1)}-${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
+}
+
+/* ---------- 点击复制币种名 ---------- */
+/* 优先 Clipboard API(file:// 下常被权限策略拒绝) → execCommand 兜底，保证双击打开也能复制 */
+function copySymbol(text){
+  return new Promise(res=>{
+    const legacy = ()=>{
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.cssText = "position:fixed;top:-999px;opacity:0";
+      document.body.appendChild(ta);
+      ta.focus(); ta.select();
+      let ok = false;
+      try{ ok = document.execCommand("copy"); }catch(_){}
+      ta.remove();
+      res(ok);
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(text).then(()=>res(true)).catch(legacy);
+    } else legacy();
+  });
+}
+/* 复制反馈：条幅边框短暂高亮 + 币种名后浮现 ✓ 徽标，1.1s 自动消失 */
+function showCopyTip(item, ok){
+  const old = item.querySelector(".copybadge");
+  if (old) old.remove();   // 连点防叠加
+  item.classList.add("copied");
+  const s = document.createElement("span");
+  s.className = "copybadge " + (ok ? "ok" : "bad");
+  s.textContent = ok ? "✓ 已复制" : "✗ 复制失败";
+  item.querySelector(".sym").appendChild(s);
+  setTimeout(()=>{ item.classList.remove("copied"); s.remove(); }, 1100);
+}
+/* 绑定点击复制币种名交互(拖选文字时不触发，方便手动选择内容)
+   withKeyboard=true 时额外绑定 Enter/Space 键盘复制(榜单行需键盘可访问) */
+function attachCopy(item, symbol, withKeyboard){
+  item.title = "点击复制币种名";
+  const tryCopy = ()=>{
+    if (window.getSelection && String(window.getSelection())) return;   // 拖选文字不触发
+    copySymbol(symbol).then(ok=>showCopyTip(item, ok));
+  };
+  item.onclick = tryCopy;
+  if (withKeyboard){
+    item.tabIndex = 0;
+    item.onkeydown = ev=>{ if (ev.key==="Enter" || ev.key===" "){ ev.preventDefault(); tryCopy(); } };
+  }
+}
+
+/* ---------- 单条节点构造 ---------- */
+function isBig5m(e){
+  const v = parseFloat(e.priceChange);
+  return String(e.period||"").toLowerCase() === "5m" && isFinite(v) && Math.abs(v) >= 0.05;
+}
+function itemNode(e){
+  const raw = parseFloat(e.priceChange);
+  const pct = isFinite(raw) ? raw*100 : 0;
+  const up = pct >= 0;
+  const big = isBig5m(e);
+  let cls = "item";
+  let iconHtml = iconFor(e);
+  let badge = "";
+  if (big){
+    if (up){ cls += " alert-up"; iconHtml = ROCKET_ICON; badge = '<span class="badge up-badge">🚀 5m飙升</span>'; }
+    else   { cls += " alert-down"; iconHtml = CRY_ICON; badge = '<span class="badge down-badge">😭 5m跳水</span>'; }
+  }
+  const item = document.createElement("div");
+  item.className = cls;
+  const pctCls = "pct " + (up?"up":"down") + (big ? "" : (Math.abs(pct) >= 3 ? " mid" : ""));
+  /* 价格快照：异动检测到那一刻的价格，永远不随实时变化
+     5M大异动优先用K线异动时刻价格(_moverPrice)，普通异动用快照(_snapPrice) */
+  const pxVal = (big && typeof e._moverPrice === "number") ? e._moverPrice : e._snapPrice;
+  const px = (typeof pxVal === "number") ? fmtPrice(pxVal) : "—";
+  const qv = volMap[e.symbol];
+  const volStr = (typeof qv === "number" && isFinite(qv)) ? fmtVol(qv) : "—";
+  item.innerHTML = `
+    <div class="sym"><b>${e.symbol}</b><span class="tag">永续</span>${badge}</div>
+    <div class="ts"><span class="vol"><span class="plabel">24H：</span>${volStr}</span>${tsFmt(e.createTimestamp)}</div>
+    <div class="pctrow">
+      <span class="${pctCls}">${up?"+":""}${pct.toFixed(2)}%</span>${iconHtml}
+    </div>
+    <div class="pricow">
+      <span class="price"><span class="plabel">价格：</span>${px}</span>
+      <span class="kind">&nbsp;&nbsp;${typeText(e)}</span>
+    </div>`;
+  attachCopy(item, e.symbol, false);
+  return item;
+}
+
+/* ---------- 渲染(全量重建, 最多渲染RENDER_LIMIT条；异步回调用 scheduleRender 防抖合并) ---------- */
+let renderTimer = null;
+function scheduleRender(){
+  if (renderTimer) return;
+  renderTimer = setTimeout(()=>{ renderTimer = null; render(); }, 100);
+}
+function render(){
+  if (curView === "pin"){ renderPinList(); return; }   // 📌插针视图: 主列表渲染插针事件流
+  if (isRankMode()){ renderRankList(); return; }   // 榜单视图：主列表渲染涨/跌幅榜
+  const cat = CATS.find(c=>c[0]===curCat) || CATS[0];
+  const filtered = movers.filter(e=>cat[2](e) && periodMatch(e));
+  const rows = filtered.slice(0, RENDER_LIMIT);
+  const n = filtered.length;
+  $("count").textContent = n ? (n > RENDER_LIMIT ? `仅显示最新${RENDER_LIMIT}条 / 共${n}条` : `共 ${n} 条`) : "";
+  const list = $("list");
+  list.innerHTML = "";
+  if (!rows.length){
+    const d = document.createElement("div");
+    d.className = "empty"; d.textContent = "📭 当前筛选暂无异动";
+    list.appendChild(d); return;
+  }
+  const frag = document.createDocumentFragment();
+  rows.forEach(e=>frag.appendChild(itemNode(e)));
+  list.appendChild(frag);
+}
+
+/* ---------- 状态 ---------- */
+function fmtClock(ms){
+  const d = new Date(ms);
+  return `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
+}
+function setStatus(mode){
+  const dot = $("dot"), st = $("status");
+  const lastMover = lastMoverTs ? ` · 最后异动 <span class="lastmv">${fmtClock(lastMoverTs)}</span>` : "";
+  if (mode === "live"){
+    dot.className = "dot";
+    st.innerHTML = `<span class="mode live">● 实时推送</span> 已连接${lastMover}`;
+  } else if (mode === "err"){
+    dot.className = "dot err";
+    st.innerHTML = `<span class="mode err">⚡ 连接中断</span> 正在重连…`;
+  } else {
+    dot.className = "dot";
+    st.textContent = "连接中…";
+  }
+}
+
+/* ---------- 声音(本地铃声): 正常提示 Canopus / 5m大涨大跌 Star_Struck / 进行中 ZZ ---------- */
+const sndNormal = $("sndNormal"), sndBig = $("sndBig"), sndZZ = $("sndZZ");
+let lastBigTs = 0;                  // 上次 5m 大异动铃声(zzz)播放时间
+const BIG_SUPPRESS_MS = 5000;       // 5m大异动后5秒内抑制普通aa提示, 防"5m大涨大跌时aa也响"重叠
+function playSound(el){
+  if (!soundOn || !el) return;
+  try{
+    el.currentTime = 0;            // 连续触发时从头播
+    const p = el.play();            // 首次需用户点"声音开"产生交互后自动播放才被允许
+    if (p && p.catch) p.catch(()=>{});
+  }catch(_){}
+}
+function playNormal(){
+  if (Date.now() - lastBigTs < BIG_SUPPRESS_MS) return;   // 刚播过5m大异动铃声, 5秒内跳过普通aa提示
+  playSound(sndNormal);   // 正常提示
+}
+function playBig(){ lastBigTs = Date.now(); playSound(sndBig); }   // 5分钟大涨大跌
+function playZZ(){ playSound(sndZZ); }   // 📌进行中(新黄卡出现)提示音: 本地 ZZ.mp3
+$("sound").onclick = ()=>{
+  soundOn = !soundOn;
+  $("sound").textContent = soundOn ? "🔔 声音开" : "🔔 声音关";
+  $("sound").classList.toggle("on", soundOn);
+};
+/* 测试铃声按钮：单击=正常提示(aa) 双击=5m大涨大跌(zzz)。
+   双击会先触发两次单击→用延时取消单击, 保证双击只播zzz不先播aa；
+   不依赖 soundOn 开关，随时可自检；点击产生的用户手势也会顺带解锁后续自动播放 */
+let testTimer = null;
+$("testSnd").onclick = ()=>{
+  if (testTimer) clearTimeout(testTimer);
+  testTimer = setTimeout(()=>{ try{ sndNormal.currentTime=0; const p=sndNormal.play(); if(p&&p.catch)p.catch(()=>{}); }catch(_){} }, 280);
+};
+$("testSnd").ondblclick = ()=>{
+  if (testTimer) clearTimeout(testTimer);   // 取消即将触发的单击aa
+  try{ sndBig.currentTime=0; const p=sndBig.play(); if(p&&p.catch)p.catch(()=>{}); }catch(_){}
+};
+
+/* ---------- 飞书推送(5M大异动) ---------- */
+$("feishuBtn").onclick = ()=>{
+  feishuOn = !feishuOn;
+  $("feishuBtn").textContent = feishuOn ? "📮 飞书 开" : "📮 飞书 关";
+  $("feishuBtn").classList.toggle("on", feishuOn);
+};
+/* 双击飞书按钮 = 手动测试推送通道(验证 file:// 下能否发出) */
+$("feishuBtn").ondblclick = ()=>{
+  sendFeishu([{symbol: "测试推送", priceChange: 0.05, openTime: Date.now(), createTimestamp: Date.now(), period: "5m", eventType: "UP_2", noticeType: "PRICE_CHANGE"}]);
+};
+/* 推送状态显示(footer)：用户可直观看到推送是否工作 */
+function markPush(ok){
+  const el = $("pushStatus");
+  if (!el) return;
+  const d = new Date();
+  el.innerHTML = ` · <span style="color:${ok?"#2ebd85":"#f6465d"}">最后推送 ${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())} ${ok?"✓":"✗"}</span>`;
+}
+
+/* ---------- 价格表(网页端显示 + 飞书推送共用) ---------- */
+const TICKER_URL = "https://www.icnguxncf.com/fapi/v1/ticker/24hr";   // 24H ticker：一次取 价格+24h成交额
+const priceMap = {};   // symbol -> 当前价
+const volMap   = {};   // symbol -> 24H成交额(quoteVolume)
+const highMap  = {};   // symbol -> 24H最高价(插针触24H高低标注用)
+const lowMap   = {};   // symbol -> 24H最低价
+async function refreshPrices(){   // 全量拉取全部合约 24h 行情(价格+成交额, 每轮轮询刷新)
+  try{
+    const ctl = new AbortController();
+    const timer = setTimeout(()=>ctl.abort(), 12000);
+    const r = await fetch(TICKER_URL, {cache: "no-store", signal: ctl.signal});
+    clearTimeout(timer);
+    const data = await r.json();
+    if (Array.isArray(data)){
+      for (const d of data){
+        if (d && d.symbol){
+          const p = parseFloat(d.lastPrice);
+          if (isFinite(p)) priceMap[d.symbol] = p;
+          const qv = parseFloat(d.quoteVolume);
+          if (isFinite(qv)) volMap[d.symbol] = qv;
+          const hp = parseFloat(d.highPrice), lp = parseFloat(d.lowPrice);
+          if (isFinite(hp)) highMap[d.symbol] = hp;
+          if (isFinite(lp)) lowMap[d.symbol] = lp;
+        }
+      }
+      pinBoot();   // ★ 价格表就绪后初始化插针监测(内部防重入)
+      return true;
+    }
+  }catch(_){}
+  return false;
+}
+async function fetchPrice(symbol){   // 单币补查(快照/成交额缺失时补用，一次补价格+24h成交额)
+  try{
+    const ctl = new AbortController();
+    const timer = setTimeout(()=>ctl.abort(), 5000);
+    const r = await fetch(`${TICKER_URL}?symbol=${encodeURIComponent(symbol)}`, {cache: "no-store", signal: ctl.signal});
+    clearTimeout(timer);
+    const d = await r.json();
+    if (d && d.lastPrice){
+      const p = parseFloat(d.lastPrice);
+      if (isFinite(p)){ priceMap[symbol] = p; }
+        const qv = parseFloat(d.quoteVolume);
+        if (isFinite(qv)){ volMap[symbol] = qv; }
+        const hp = parseFloat(d.highPrice), lp = parseFloat(d.lowPrice);
+        if (isFinite(hp)){ highMap[symbol] = hp; }
+        if (isFinite(lp)){ lowMap[symbol] = lp; }
+        return p;
+    }
+  }catch(_){}
+  return NaN;
+}
+function fmtPrice(v){
+  if (!isFinite(v)) return "—";
+  if (v >= 1000) return "$" + v.toLocaleString("en-US", {minimumFractionDigits: 2, maximumFractionDigits: 2});
+  if (v >= 1)   return "$" + v.toLocaleString("en-US", {maximumFractionDigits: 4});
+  return "$" + v.toLocaleString("en-US", {maximumFractionDigits: 6});
+}
+/* 查询异动时刻的真实价格(用 K 线开盘价 × (1+priceChange) 计算，
+   而不是当前实时价——即使异动发生在很久前也能算准) */
+async function fetchMoverPrice(symbol, openTime, priceChange){
+  try{
+    const ctl = new AbortController();
+    const timer = setTimeout(()=>ctl.abort(), 5000);
+    const url = `https://www.icnguxncf.com/fapi/v1/klines?symbol=${encodeURIComponent(symbol)}&interval=5m&startTime=${openTime}&limit=1`;
+    const r = await fetch(url, {cache: "no-store", signal: ctl.signal});
+    clearTimeout(timer);
+    const klines = await r.json();
+    if (Array.isArray(klines) && klines.length){
+      const open = parseFloat(klines[0][1]);   // K线开盘价
+      if (isFinite(open) && open > 0){
+        return open * (1 + parseFloat(priceChange));   // 异动时刻价格 = 开盘价 × (1 + 涨跌幅)
+      }
+    }
+  }catch(_){}
+  return NaN;
+}
+async function sendFeishu(items){
+  if (!feishuOn || !items.length) return;
+  const show = items.slice(0, 5);
+  await Promise.all(show.map(async it=>{
+    /* 用 K 线计算异动时刻的真实价格：复用 ingestAll 已发起的查询避免重复请求 */
+    if (typeof it._moverPrice !== "number"){
+      if (it._moverPriceP){
+        const p = await it._moverPriceP;   // 复用 ingestAll 发起的 K 线查询
+        if (isFinite(p)) it._moverPrice = p;
+      } else {
+        const p = await fetchMoverPrice(it.symbol, it.openTime, it.priceChange);
+        if (isFinite(p)) it._moverPrice = p;
+      }
+      if (typeof it._moverPrice !== "number"){
+        it._moverPrice = (typeof it._snapPrice === "number") ? it._snapPrice : priceMap[it.symbol];   // 兑底
+      }
+    }
+    /* 24H成交额缺失时补查一次(fetchPrice 同时补价格表) */
+    if (typeof volMap[it.symbol] !== "number") await fetchPrice(it.symbol);
+  }));
+  const elements = [];
+  show.forEach((it, i)=>{
+    const pct = parseFloat(it.priceChange);
+    const up = isFinite(pct) ? pct >= 0 : true;
+    const icon = up ? "🚀" : "😭";
+    const col  = up ? "red" : "green";   // 与网页一致：红涨绿跌
+    const tag  = up ? "5m飙升" : "5m跳水";
+    const t = tsFmt(it.createTimestamp || Date.now());
+    const px = fmtPrice(it._moverPrice);   // 异动时刻的真实价格
+    const qv = volMap[it.symbol];
+    const volStr = (typeof qv === "number" && isFinite(qv)) ? fmtVol(qv) : "—";
+    const pctStr = isFinite(pct) ? (up?"+":"") + (pct*100).toFixed(2) + "%" : "—";
+    /* 与网页条幅一致：左列=币种+24H成交额+时间，右列=价格+涨跌幅+图标+类型 */
+    elements.push({
+      tag: "column_set", flex_mode: "none",
+      columns: [
+        {tag: "column", width: "weighted", weight: 3, vertical_align: "center", elements: [
+          {tag: "div", text: {tag: "lark_md", text_size: "large", content:
+            `${icon} **${it.symbol}** <font color='grey'>永续</font>\n` +
+            `<font color='grey'>24H：${volStr}</font>\n` +
+            `<font color='grey'>⏱ ${t}</font>`}}
+        ]},
+        {tag: "column", width: "weighted", weight: 2, horizontal_align: "right", vertical_align: "center", elements: [
+          {tag: "div", text: {tag: "lark_md", text_size: "large", content:
+            `<font color='${col}'>${px}</font>\n` +
+            `<font color='${col}'>${pctStr}</font> ${icon}\n` +
+            `${tag}`}}
+        ]}
+      ]
+    });
+    if (i < show.length - 1) elements.push({tag: "hr"});
+  });
+  if (items.length > 5){
+    elements.push({tag: "div", text: {tag: "lark_md", text_size: "normal", content: `<font color='grey'>… 等 ${items.length} 条</font>`}});
+  }
+  elements.push({tag: "hr"});
+  elements.push({tag: "div", text: {tag: "lark_md", text_size: "normal", content: `<font color='grey'>数据来源：币安公开行情 · 仅供个人监控参考</font>`}});
+  /* 卡片头部标题(红框区域)：单条=「币种永续 涨跌%」，多条=首条信息 + 等N条 */
+  const f0 = show[0];
+  const f0p = parseFloat(f0.priceChange);
+  const f0pct = isFinite(f0p) ? (f0p>=0?"+":"") + (f0p*100).toFixed(2) + "%" : "—";
+  const headerTitle = (items.length === 1)
+    ? `🚨 ${f0.symbol}永续 ${f0pct}`
+    : `🚨 ${f0.symbol}永续 ${f0pct} 等${items.length}条`;
+  const card = {
+    schema: "2.0",
+    header: {template: "orange", title: {tag: "plain_text", content: headerTitle}},
+    body: {elements}
+  };
+  const payload = JSON.stringify({msg_type: "interactive", card});
+  /* 双通道发送：
+     ① cors fetch(可读响应判断成败) → 成功即完成
+     ② 失败(如 file:// 下 CORS 被阻) → no-cors + text/plain 重试
+        (no-cors 模式下请求一定能发出，飞书按 body 内容解析 JSON 不看 Content-Type，已验证可行) */
+  const ctl = new AbortController();
+  const timer = setTimeout(()=>ctl.abort(), 8000);
+  fetch(FEISHU_WEBHOOK, {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: payload,
+    credentials: "omit",
+    signal: ctl.signal
+  }).then(r=>r.json()).then(d=>{
+    clearTimeout(timer);
+    if (d && d.code === 0){ markPush(true); console.log("[飞书] 已推送", items.length, "条 5M异动"); }
+    else { markPush(false); console.warn("[飞书] 推送失败", d); }
+  }).catch(()=>{
+    clearTimeout(timer);
+    /* cors 模式被阻 → no-cors 重试(text/plain 简单请求不发预检) */
+    fetch(FEISHU_WEBHOOK, {
+      method: "POST",
+      headers: {"Content-Type": "text/plain"},
+      body: payload,
+      mode: "no-cors"
+    }).then(()=>{
+      markPush(true);   /* no-cors 读不到响应，请求已发出即视为成功 */
+      console.log("[飞书] 已推送(no-cors)", items.length, "条 5M异动");
+    }).catch(e=>{
+      markPush(false);
+      console.warn("[飞书] 推送异常", e);
+    });
+  });
+}
+
+/* ---------- 飞书通用发送(双通道: cors fetch → no-cors 兜底, 与 sendFeishu 同套逻辑) ---------- */
+function postCard(card, tag){
+  const payload = JSON.stringify({msg_type: "interactive", card});
+  const ctl = new AbortController();
+  const timer = setTimeout(()=>ctl.abort(), 8000);
+  fetch(FEISHU_WEBHOOK, {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: payload,
+    credentials: "omit",
+    signal: ctl.signal
+  }).then(r=>r.json()).then(d=>{
+    clearTimeout(timer);
+    if (d && d.code === 0){ markPush(true); console.log("[飞书] 已推送", tag); }
+    else { markPush(false); console.warn("[飞书] 推送失败", tag, d); }
+  }).catch(()=>{
+    clearTimeout(timer);
+    fetch(FEISHU_WEBHOOK, {
+      method: "POST",
+      headers: {"Content-Type": "text/plain"},
+      body: payload,
+      mode: "no-cors"
+    }).then(()=>{ markPush(true); console.log("[飞书] 已推送(no-cors)", tag); })
+      .catch(e=>{ markPush(false); console.warn("[飞书] 推送异常", tag, e); });
+  });
+}
+/* ✨ 强插针飞书卡片: 只推顺势确认(逆势/回放/未加载趋势不推) */
+function sendPinCard(ev){
+  if (!feishuOn || !ev || !ev.strong || ev.replay || pinIsCross(ev)) return;
+  const isLow = ev.side === "sweep-low";
+  const icon = isLow ? "⬇️" : "⬆️";
+  const col  = isLow ? "red" : "green";   // 红涨绿跌: 扫下方=偏多=红 / 扫上方=偏空=绿
+  const ti = trendAt(ev.sym, ev.ts);
+  let trendTxt = "⏳ 趋势加载";
+  if (ti.dir === "up" || ti.dir === "down"){
+    const sgn = ti.deg >= 0 ? "+" : "−";
+    trendTxt = `${ti.dir === "up" ? "📈 趋势多" : "📉 趋势空"} ${sgn}${Math.abs(ti.deg)}°`;
+  } else if (ti.dir === "flat") trendTxt = `➖ 横盘 ${ti.deg >= 0 ? "+" : "−"}${Math.abs(ti.deg)}°`;
+  const card = {
+    schema: "2.0",
+    header: {template: "red", title: {tag: "plain_text", content: `✨ 强插针 ${ev.symbol} 永续`}},
+    body: {elements: [
+      {tag: "div", text: {tag: "lark_md", text_size: "large", content:
+        `${icon} **${isLow ? "扫下方 · 偏多" : "扫上方 · 偏空"}**\n` +
+        `<font color='${col}'>针尖 ${fmtPrice(ev.tip)}</font>\n` +
+        `<font color='grey'>偏离 ${isLow ? "-" : "+"}${(ev.dev*100).toFixed(1)}% · 回归 ${Math.min(ev.retr*100, 100).toFixed(0)}%</font>\n` +
+        `<font color='grey'>量能 ${ev.volX >= 1 ? ev.volX.toFixed(1)+"×" : "—"} · 基准价 ${fmtPrice(ev.base)}</font>\n` +
+        `<font color='grey'>${trendTxt} · ⏱ ${tsFmt(ev.ts)}</font>`}}
+    ]}
+  };
+  postCard(card, `✨强插针 ${ev.symbol}(${isLow ? "多" : "空"})`);
+}
+
+/* ---------- 数据处理 ---------- */
+function pushItem(e){
+  const k = keyOf(e);
+  if (seen.has(k)) return false;
+  seen.add(k);
+  /* 限制 seen 大小，防止长期运行内存无限增长 */
+  if (seen.size > 2500) seen = new Set(Array.from(seen).slice(-1500));
+  movers.push(e);
+  return true;
+}
+function ingestAll(list, silent){
+  let added = 0, newMatch = 0;
+  let newBig5 = false;            // 本轮是否有新增 5M 大异动(独立于飞书开关, 决定铃声 zzz)
+  const new5m = [];   // 本轮新增的 5M 大异动(待飞书推送)
+  const cat = CATS.find(c=>c[0]===curCat) || CATS[0];   // 榜单模式下回落到"全部"，后台异动照常入库
+  /* 新异动判定基线：用全局最新异动时间戳，省去每轮 O(n) 扫描 movers 数组 */
+  const base = lastMoverTs;
+  (list||[]).forEach(e=>{
+    if (pushItem(e)){
+      added++;
+      /* ★ 价格快照：异动被检测到时立即记录当时价格，之后永远不变 */
+      if (e._snapPrice === undefined){
+        const p = priceMap[e.symbol];
+        if (p !== undefined){
+          e._snapPrice = p;   // 价格表有则直接快照
+        } else {
+          e._snapPrice = null;   // 价格表没有则异步补查一次(只查一次)
+          fetchPrice(e.symbol).then(pp=>{
+            if (isFinite(pp)){ e._snapPrice = pp; scheduleRender(); }
+          });
+        }
+      }
+      if (cat[2](e) && periodMatch(e) && typeof e.createTimestamp === "number" && e.createTimestamp > base){
+        newMatch++;
+      }
+      /* 收集新增的 5M 大异动用于飞书推送(初始拉取 silent=true 不推历史) */
+      if (isBig5m(e) && feishuOn && !silent) new5m.push(e);
+      /* 本轮新增的 5M 大异动 → 用 zzz 铃声(与飞书开关无关) */
+      if (isBig5m(e) && !silent) newBig5 = true;
+      /* 5M 大异动：异步计算异动时刻价格(K线精确值)，promise 存到对象上供 sendFeishu 复用 */
+      if (isBig5m(e) && e._moverPrice === undefined){
+        e._moverPrice = null;
+        e._moverPriceP = fetchMoverPrice(e.symbol, e.openTime, e.priceChange).then(p=>{
+          if (isFinite(p)) e._moverPrice = p;
+          return p;
+        });
+        e._moverPriceP.then(()=>{ scheduleRender(); }).catch(()=>{});
+      }
+    }
+  });
+  /* 仅在有新增时才排序+裁剪(无新增时数组已是有序的)，减少每轮无谓 sort 开销 */
+  if (added && movers.length){
+    movers.sort((a,b)=>b.createTimestamp - a.createTimestamp);
+    if (movers.length > MAX_ITEMS) movers = movers.slice(0, MAX_ITEMS);
+  }
+  if (added){
+    if (!isRankMode()) scheduleRender();   // 用防抖合并 WS+REST 多源快速连发，避免无谓 DOM 重建
+    /* 铃声: 5M大异动无条件响zzz(不受当前筛选/普通计数门控, 否则筛选下会漏); 否则有普通新异动响aa */
+    if (!silent && !isRankMode()){
+      if (newBig5) playBig();
+      else if (newMatch > 0) playNormal();
+    }
+  }
+  if (new5m.length) sendFeishu(new5m);
+  if (movers.length){
+    const top = movers[0].createTimestamp;
+    if (typeof top === "number" && isFinite(top)) lastMoverTs = top;
+    setStatus("live");
+  }
+  return added;
+}
+
+/* ---------- REST(兜底数据源) ---------- */
+async function restFetch(){
+  /* 加时间戳参数强制绕过浏览器/服务器缓存，避免返回旧数据 */
+  const url = REST + (REST.includes("?") ? "&" : "?") + "_t=" + Date.now();
+  const ctl = new AbortController();
+  const timer = setTimeout(()=>ctl.abort(), 15000);   // 15s 超时，防请求挂死阻塞轮询
+  try{
+    const r = await fetch(url, {cache: "no-store", signal: ctl.signal});
+    const data = await r.json();
+    return Array.isArray(data) ? data : [];
+  } finally { clearTimeout(timer); }
+}
+let restBusy = false;      // REST 并发防重
+let restAttempt = 0;
+/* REST 拉取(兜底数据源)，WS 实时流为主：
+   先刷价格表再入库(快照价格准确)；返回完整 promise 链，restBusy 在链跑完才释放。
+   silent=true：启动/断线补偿，静音不推历史，失败按 REST_RETRY_MS 退避重试；
+   silent=false：30s 定时校准，失败静默等下一轮。 */
+function fetchMovers(silent){
+  if (restBusy) return;
+  restBusy = true;
+  restFetch().then(list=>{
+    restAttempt = 0;
+    return refreshPrices().then(()=>{ ingestAll(list, silent); });
+  }).catch(()=>{
+    if (silent){
+      restAttempt++;
+      setTimeout(()=>fetchMovers(true), REST_RETRY_MS * Math.min(restAttempt, 5));
+    }
+  }).finally(()=>{ restBusy = false; });
+}
+
+/* ---------- WebSocket 实时(保活心跳 + topMovers 实时异动流) ---------- */
+/* topMovers 在市场安静时长时间无推送, 会被服务端当空闲连接断开。
+   同一连接加订 btcusdt@aggTrade 保活流(每秒都有消息);
+   watchdog: 超过60秒无任何消息判定连接已死, 主动重连。 */
+const WATCHDOG_MS = 60000;
+let ws = null;
+/* ★ WS topMovers 批量入库：200ms 内的推送合并为一批，避免高频逐条触发 render/推送 */
+let wsBuffer = [];
+let wsBufferTimer = null;
+function wsIngest(mover){
+  if (!mover.symbol || !mover.eventType || !mover.createTimestamp) return;
+  wsBuffer.push(mover);
+  if (!wsBufferTimer){
+    wsBufferTimer = setTimeout(()=>{
+      wsBufferTimer = null;
+      const batch = wsBuffer;
+      wsBuffer = [];
+      ingestAll(batch, false);   // silent=false: 实时新异动 → 响声提示+飞书推送
+    }, 200);
+  }
+}
+function connectWS(){
+  try{ if (ws) { ws.onclose = null; ws.close(); } }catch(_){}
+  ws = new WebSocket(WS_URL);
+  ws.onopen = ()=>{
+    wsAlive = true;
+    lastMsgTime = Date.now();
+    /* 订阅 topMovers 实时异动流(秒级逐条推送) + btcusdt@aggTrade 保活心跳；
+       REST 30s 校准降级为断线补偿兜底，实时性完全由 WS 驱动 */
+    ws.send(JSON.stringify({method:"SUBSCRIBE", params:["topMovers", "btcusdt@aggTrade", ...Array.from(pinStreams)], id:1}));
+    setStatus("live");
+    if (!movers.length) fetchMovers(true);   // 仅首次/断线后补偿，避免与启动拉取重复
+  };
+  ws.onmessage = ev=>{
+    lastMsgTime = Date.now();   // 保活心跳
+    if (failCount) failCount = 0;
+    /* ★ 实时解析 topMovers 推送(WS 短字段→REST 长字段映射) */
+    try{
+      const msg = JSON.parse(ev.data);
+      if (msg && msg.stream === "topMovers" && msg.data){
+        const d = msg.data;
+        wsIngest({
+          id: d.i,
+          createTimestamp: d.c || d.E,
+          eventType: d.e,
+          noticeType: d.n,
+          period: d.P || "",
+          openTime: d.o,
+          priceChange: d.p,
+          symbol: d.s,
+        });
+      }
+      /* ★ 插针监测: 1m kline 标准流(未收盘K线每秒推送一次) */
+      else if (msg && msg.stream && msg.stream.endsWith("@kline_1m") && msg.data && msg.data.k){
+        pinOnKline(msg.data.s, msg.data.k);
+      }
+    }catch(_){}
+  };
+  ws.onclose = ()=>{
+    wsAlive = false;
+    setStatus("err");
+    failCount = Math.min(failCount + 1, 5);
+    const delay = [3000, 6000, 12000, 24000, 30000][Math.min(failCount-1, 4)];
+    setTimeout(()=>{ if (!wsAlive) connectWS(); }, delay);
+  };
+  ws.onerror = ()=>{ try{ ws.close(); }catch(_){} };
+}
+
+/* ---------- watchdog: 静默断线检测 ---------- */
+setInterval(()=>{
+  if (!wsAlive) return;
+  if (Date.now() - lastMsgTime > WATCHDOG_MS){
+    try{ ws.close(); }catch(_){}   // 触发 onclose -> 快速重连
+  }
+}, 15000);
+
+/* ---------- 定时校准(30s, 以 REST 为准) ---------- */
+setInterval(()=>{ fetchMovers(false); }, CALIBRATE_MS);
+
+/* ---------- 启动: 初始 REST 拉取 + WS 实时 ---------- */
+fetchMovers(true);
+connectWS();
+
+/* ---------- 24H 合约涨跌幅榜(数据源: fapi/v1/ticker/24hr 排序) ---------- */
+const RANK_URL     = "https://www.icnguxncf.com/fapi/v1/ticker/24hr";
+const RANK_SIZE    = 20;        // 每榜条数
+const RANK_MIN_VOL = 1e6;       // 24H成交额门槛 $100万, 过滤无量刷榜小币
+const RANK_REFRESH = 30000;     // 选中榜单期间自动刷新间隔
+const RANK_STALE_MS = 20000;    // 缓存超过此时长则重新拉取
+let rankRows = { up: [], down: [] };
+let rankTs = 0;
+let rankErr = false;
+let rankTimer = null;
+
+/* 只保留 USDT 本位永续: 排除交割合约(如 BTCUSDT_250926)、USDC 结算对、非标符号(如"龙虾USDT")、股票杠杆代币(CSOP前缀) */
+const RANK_RE = /^[A-Z0-9]+USDT$/, CSOP_RE = /^CSOP/;
+function rankFilter(d){
+  return RANK_RE.test(d.symbol) && !CSOP_RE.test(d.symbol) && parseFloat(d.quoteVolume) >= RANK_MIN_VOL;
+}
+async function fetchRank(){
+  const ctl = new AbortController();
+  const timer = setTimeout(()=>ctl.abort(), 15000);
+  try{
+    const r = await fetch(RANK_URL + "?_t=" + Date.now(), {cache:"no-store", signal: ctl.signal});
+    const data = await r.json();
+    if (!Array.isArray(data)) return false;
+    const rows = data.filter(rankFilter).map(d=>({
+      symbol: d.symbol,
+      pct: parseFloat(d.priceChangePercent) || 0,
+      last: parseFloat(d.lastPrice) || 0,
+      vol: parseFloat(d.quoteVolume) || 0,
+    }));
+    rows.sort((a,b)=>b.pct - a.pct);
+    rankRows.up = rows.slice(0, RANK_SIZE);
+    rankRows.down = rows.slice(-RANK_SIZE).reverse();   // 最惨在前
+    rankTs = Date.now();
+    return true;
+  }catch(_){ return false; }
+  finally{ clearTimeout(timer); }
+}
+function fmtVol(v){   // 成交额中文单位: 亿/万, 200M -> 2亿
+  if (!isFinite(v) || v < 0) return "—";
+  if (v >= 1e8){
+    const y = v / 1e8;
+    return parseFloat(y.toFixed(2)) + "亿";
+  }
+  if (v >= 1e4){
+    const w = v / 1e4;
+    return parseFloat(w.toFixed(1)) + "万";
+  }
+  return String(Math.round(v));
+}
+/* 榜单行节点：复用 .item 条幅布局，前三名奖牌/其余名次徽标，红涨绿跌 */
+function rankItemNode(r, i){
+  const item = document.createElement("div");
+  item.className = "item rank-item";
+  item.title = "点击复制币种名";
+  const medals = ["🥇","🥈","🥉"];
+  const noHtml = i < 3
+    ? `<span class="rank-medal">${medals[i]}</span>`
+    : `<span class="rank-no">${i+1}</span>`;
+  const up = r.pct >= 0;
+  const volStr = fmtVol(r.vol);
+  item.innerHTML = `
+    <div class="sym">${noHtml}<b>${r.symbol}</b><span class="tag">永续</span></div>
+    <div class="ts"><span class="vol"><span class="plabel">24H：</span>${volStr}</span></div>
+    <div class="pctrow"><span class="pct mid ${up?"up":"down"}">${up?"+":""}${r.pct.toFixed(2)}%</span></div>
+    <div class="pricow"><span class="price">${fmtPrice(r.last)}</span></div>`;
+  attachCopy(item, r.symbol, true);
+  return item;
+}
+/* 榜单渲染进主列表(类型下拉选中 涨幅榜/跌幅榜 时) */
+function renderRankList(){
+  const rows = rankRows[curRank];
+  const name = curRank === "up" ? "24H涨幅榜" : "24H跌幅榜";
+  $("count").textContent = rows.length
+    ? `${name} TOP${rows.length} · ${fmtClock(rankTs)} 更新`
+    : (rankErr ? "✗ 榜单拉取失败" : "⏳ 榜单加载中…");
+  const list = $("list");
+  list.innerHTML = "";
+  if (!rows.length){
+    const d = document.createElement("div");
+    d.className = "empty";
+    if (rankErr){
+      d.textContent = "✗ 榜单拉取失败，点击重试";
+      d.style.cursor = "pointer";
+      d.onclick = refreshRankNow;
+    } else d.textContent = "⏳ 榜单加载中…";
+    list.appendChild(d);
+    return;
+  }
+  const frag = document.createDocumentFragment();
+  rows.forEach((r,i)=>frag.appendChild(rankItemNode(r,i)));
+  list.appendChild(frag);
+}
+async function refreshRankNow(){
+  rankErr = !(await fetchRank());
+  if (isRankMode()) render();
+}
+function stopRankTimer(){
+  if (rankTimer){ clearInterval(rankTimer); rankTimer = null; }
+}
+/* 选中榜单：数据过期即拉取 + 期间30s自动刷新；切回异动类型即停止 */
+function ensureRank(){
+  if (!rankTs || Date.now() - rankTs > RANK_STALE_MS) refreshRankNow();
+  stopRankTimer();
+  rankTimer = setInterval(refreshRankNow, RANK_REFRESH);
+}
+
+/* ============================================================
+   📌 插针监测(流动性扫荡检测) · 1m K线 + 10分钟滑动窗口
+   ------------------------------------------------------------
+   判定口径(三要素):
+   ① 偏离: 窗口极值(low/high)相对窗口基准价(10分钟前)偏离
+      ≥ max(2.5 × ATR10/基准价, 1.5%) 且 ≤5%(防瀑布后ATR污染盲区)，ATR10 = ATR14(1m) × √10
+      —— ATR 按价格归一(比例阈值)，BTC 与 meme 币同一把尺子
+   ② 回归: 价格自极值收回 ≥ 60% 才算确认"针插完"(排除单边行情)
+      三态: 🟡进行中(偏离达标未回归, 黄卡静默不出声不角标)
+            → ✅确认(红/绿, 出声+角标) / ⚪失效(窗口滚过仍未回归, 灰卡"未回归")
+   ③ 佐证: 针尖分钟量能 / 前20根均量 (volX) 作置信度加分
+   置信分级: 强针 ✨ = 量能≥5× 或 偏离≥5×ATR10(归一)且≥3% (金色高亮)
+   SMC 语义: ⬇️扫下方=猎杀多头止损·偏多(红) / ⬆️扫上方=猎杀空头止损·偏空(绿)
+    防抖: 同一窗口极值只报一次 + 同币分方向 15 分钟冷却(上插/下插互不干扰, 同方向防重复)
+    数据: WS kline_1m 流(订阅24H成交额TOP100 USDT永续, 每5分钟重估)
+          + REST 120根1m历史K线初始化ATR并回放最近2小时插针
+   ============================================================ */
+const PIN_TOP_N     = 100;        // 订阅币数(按24H成交额)
+const PIN_WINDOW    = 10;         // 滑动窗口: 10 根 1m K线
+const PIN_RETR      = 0.60;       // 回归确认阈值 60%
+const PIN_MIN_DEV   = 0.015;      // 最小偏离保护阈值 1.5%(ATR 极小时防过敏)
+const PIN_MAX_THR   = 0.05;       // 阈值上限 5%(防瀑布根污染ATR致"大波动后盲区")
+const PIN_COOLDOWN  = 15*60*1000; // 同币分方向冷却 15 分钟(上插/下插各自独立)
+const PIN_HOT_DEV   = 0.10;       // ⚠️进行中偏离≥10% 刺眼橙红闪烁标注(超级插针, 静默但极醒目)
+const PIN_MAX_EVENTS= 80;         // 保留事件条数
+const PIN_ATR_MULT  = 2.5;        // 偏离 = ATR10 × 2.5
+const PIN_STRONG_DEV= 5;          // 强针偏离倍数
+const PIN_STRONG_VOL= 5;          // 强针量能倍数
+const PIN_BARS_KEEP = 40;         // 每币保留已收盘K线根数(ATR计算+窗口)
+const PIN_REST      = "https://www.icnguxncf.com/fapi/v1/klines";
+/* 趋势过滤(5m EMA200 单线斜率·角度制): 阶梯式响应盘面, 震荡下坡不再被 EMA 交叉反复翻面;
+   角度 θ = atan(Δ% × K), Δ% = EMA200 近60根(5小时)净位移, K=0.36;
+   定标(实测): 20°=1.0%/5h(≈5%/天, 温和爬坡/阴跌达线=趋势) 45°=2.8%/5h(≈13%/天, 单边大行情=强);
+   BTC/ETH 平常日约7°判横盘, 瀑布/拉升均>60°;
+   逆势=插针方向与趋势相反: 趋势多+向下插(扫下方)/趋势空+向上插(扫上方) 淡化置底;
+   顺势=插针方向与趋势同向: 趋势多+向上插(扫上方)/趋势空+向下插(扫下方) 保留 */
+const PIN_TREND_BAR   = "5m";        // 趋势周期 5 分钟图(人工盯盘节奏)
+const PIN_TREND_EMA   = 200;         // 单线 EMA200(平滑基准, 斜率=净位移)
+const PIN_TREND_LOOK  = 60;          // 斜率回看窗口 60 根(=5小时)
+const PIN_TREND_KEEP  = 500;         // 拉取 5m 根数(=EMA200预热200+有效300根, ≈42小时)
+const PIN_TREND_K     = 0.36;        // 角度映射系数: 20°=Δ1%/5h, 45°=Δ2.78%/5h
+const PIN_TREND_MIN   = 20;          // ≥20° 才算趋势, 否则横盘
+const PIN_TREND_STRONG= 45;          // ≥45° 标"强"(单边大行情)
+const PIN_TREND_REFR  = 5*60*1000;   // 趋势重估周期 5 分钟(跟随5m收盘节奏)
+/* 人工盯盘: 不剔股票/ETF/商品代币, 只剔 CSOP 杜杆代币与交割合约(RANK_RE已处理) */
+const PIN_BLOCK_RE = /__NEVER_MATCH__*/;
+/* 卡面增强: 无量/24H高低点/回踩入场/30分钟自证 */
+const PIN_VOL_THIN   = 1e6;         // 24H 成交额 < $100万 → 💤无量标签(流动性差, 插针参考价值低)
+const PIN_VERIFY_MS  = 30*60*1000;  // 自证窗口: 确认后追踪 30 分钟判涨跌
+const PIN_RE_LO      = 0.35;        // 回踩入场区: 针尖↔基准价区间的 35% 下界
+const PIN_RE_HI      = 0.65;        // 回踩入场区上界(与下界之间为回踩带)
+const PIN_STORE_DAY  = 24*3600*1000; // 持久化保留: 24小时内当天事件(跨天自动清档)
+
+let pinStreams = new Set();       // 已订阅流名 "xxxusdt@kline_1m"
+let pinMsgId = 10;                // 增量订阅消息 id(避开 onopen 的 id:1)
+let pinBooted = false;
+let pinEvents = [];               // 插针事件(新→旧渲染, 含回放标记)
+/* ---------- 当天事件持久化(localStorage): 刷新不丢, 跨天自动清档 ---------- */
+const PIN_STORE_KEY = "pinEvents_" + new Date().toISOString().slice(0, 10);   // 按自然天分档
+let pinSaveTimer = null;
+function savePinEvents(){   // 防抖 400ms 合并写入, 事件变更后落盘
+  if (pinSaveTimer) return;
+  pinSaveTimer = setTimeout(()=>{
+    pinSaveTimer = null;
+    try{ localStorage.setItem(PIN_STORE_KEY, JSON.stringify(pinEvents)); }catch(_){}
+  }, 400);
+}
+function loadPinEvents(){   // 恢复当天: 旧黄卡超时转灰, 全部标回放(不重复响铃/角标/自证/推送)
+  try{
+    const raw = localStorage.getItem(PIN_STORE_KEY);
+    if (!raw) return;
+    const arr = JSON.parse(raw);
+    if (!Array.isArray(arr) || !arr.length) return;
+    const now = Date.now(), seenKey = new Set();
+    pinEvents = arr.filter(e=>e && e.ts && now - e.ts < PIN_STORE_DAY)
+      .map(e=>{
+        if (e.status === "pending" && now - (e.lastUpd || e.ts) > 12*60*1000) e.status = "failed";
+        e.replay = true; e.restored = true;   // 恢复的事件不再触发提示/角标/飞书
+        return e;
+      })
+      .filter(e=>{   // 同币同向同分钟去重(与回放事件合并防重)
+        const k = e.sym + "|" + e.side + "|" + Math.floor(e.ts / 60000);
+        if (seenKey.has(k)) return false;
+        seenKey.add(k); return true;
+      });
+    if (pinEvents.length > PIN_MAX_EVENTS) pinEvents = pinEvents.slice(-PIN_MAX_EVENTS);
+  }catch(_){}
+  pinDedupEvents();   // 跨机制去重(清理历史遗留的重复)
+}
+/* 跨机制去重: 回放/存档/实时三套来源可能各记一条同一根针(同币同向15分钟内必为重复,
+   分方向冷却保证运行期同向独立针间隔≥15分钟) → 合并保留优先级高的一条(实时>存档>回放) */
+function pinDedupEvents(){
+  const pr = e => e.restored ? 2 : (e.replay ? 3 : 1);
+  const sorted = pinEvents.slice().sort((a,b)=>{
+    const pa = pr(a), pb = pr(b);
+    if (pa !== pb) return pa - pb;
+    return b.ts - a.ts;
+  });
+  const kept = [];
+  sorted.forEach(ev=>{
+    if (kept.some(x=>x.sym === ev.sym && x.side === ev.side && Math.abs(x.ts - ev.ts) < PIN_COOLDOWN)) return;
+    kept.push(ev);
+  });
+  if (kept.length !== pinEvents.length){ pinEvents = kept; savePinEvents(); }
+}
+const pinState = new Map();       // symbol -> {bars:[], atr, lastFireLow, lastFireHigh, firedLow, firedHigh}
+const pinTrend = new Map();       // symbol -> {series:[{t,dir,deg}], ts:刷新时间}
+
+/* ---------- 趋势引擎: 5m EMA200 单线斜率(角度制), 支持任意历史时刻回溯 ---------- */
+function emaSeries(closes, n){   // 从头到尾的 EMA 序列(SMA seed)
+  const k = 2/(n+1), out = [];
+  if (closes.length < n) return out;
+  let s = 0;
+  for (let i = 0; i < closes.length; i++){
+    if (i < n){ s += closes[i]; if (i === n-1) out.push(s/n); }
+    else {
+      const prev = out[out.length-1];
+      out.push(closes[i]*k + prev*(1-k));
+    }
+  }
+  return out;
+}
+/* 任意历史时刻查 {dir, deg}; series 元素 {t, dir, deg} */
+function trendAt(sym, ts){
+  const tr = pinTrend.get(sym);
+  if (!tr || !tr.series || !tr.series.length) return {dir:"na", deg:0};
+  let lo = 0, hi = tr.series.length - 1, ans = -1;
+  while (lo <= hi){
+    const m = (lo + hi) >> 1;
+    if (tr.series[m].t <= ts){ ans = m; lo = m + 1; } else hi = m - 1;
+  }
+  return ans >= 0 ? tr.series[ans] : {dir:"na", deg:0};
+}
+function trendDirAt(sym, ts){ return trendAt(sym, ts).dir; }
+async function fetchTrend(sym){
+  try{
+    const ctl = new AbortController();
+    const timer = setTimeout(()=>ctl.abort(), 10000);
+    const r = await fetch(`${PIN_REST}?symbol=${encodeURIComponent(sym)}&interval=${PIN_TREND_BAR}&limit=${PIN_TREND_KEEP}`, {cache:"no-store", signal:ctl.signal});
+    clearTimeout(timer);
+    const arr = await r.json();
+    if (!Array.isArray(arr) || arr.length < PIN_TREND_EMA + PIN_TREND_LOOK + 10) return;
+    const closes = arr.map(k=>+k[4]);
+    const e200 = emaSeries(closes, PIN_TREND_EMA);
+    if (e200.length <= PIN_TREND_LOOK) return;
+    /* 每根已收盘 5m bar: θ = atan(近60根 EMA200 净位移% × K)·换算成度 */
+    const n = arr.length;
+    const series = [];
+    for (let j = PIN_TREND_EMA - 1 + PIN_TREND_LOOK; j < n; j++){   // EMA seed 后再回看60根才有完整斜率
+      const iNow = j - (PIN_TREND_EMA - 1);        // e200[i]↔bar(EMA-1+i)
+      const iRef = iNow - PIN_TREND_LOOK;
+      if (iRef < 0) continue;
+      const a = e200[iNow], b = e200[iRef];
+      if (!(b > 0)) continue;
+      const t = +arr[j][0] + 5*60*1000;           // 5m bar 确认时刻(开盘+5m)
+      const d = (a - b) / b * 100;                 // Δ%(近60根=5小时)
+      const deg = Math.atan(d * PIN_TREND_K) * 180 / Math.PI;
+      const dir = deg >= PIN_TREND_MIN ? "up" : (deg <= -PIN_TREND_MIN ? "down" : "flat");
+      series.push({ t, dir, deg: Math.round(deg) });
+    }
+    pinTrend.set(sym, { series, ts: Date.now() });
+    /* 回填: 趋势加载前发生的事件(含回放批)补上事件时刻的趋势 */
+    let backfilled = false;
+    pinEvents.forEach(ev=>{
+      if (ev.sym === sym && (ev.trend === "na" || ev.trend === undefined)){ ev.trend = trendDirAt(sym, ev.ts); backfilled = true; }
+    });
+    if (backfilled && curView === "pin") render();
+  }catch(_){}
+}
+function refreshAllTrends(){   // 分批刷新全部订阅币的 15m 趋势
+  const syms = [...pinStreams].map(s=>s.split("@")[0].toUpperCase());
+  syms.forEach((s, i)=>setTimeout(()=>fetchTrend(s), Math.floor(i/6)*300));
+}
+
+/* ---------- 核心状态 ---------- */
+function pinEnsureState(sym){
+  let st = pinState.get(sym);
+  if (!st){
+    st = { bars: [], atr: 0, lastFireLow: 0, lastFireHigh: 0, firedLow: 0, firedHigh: 0 };
+    pinState.set(sym, st);
+  }
+  return st;
+}
+function calcATR(bars){   // ATR14(1m): TR = max(H-L, |H-prevC|, |L-prevC|)
+  if (bars.length < 15) return 0;
+  let s = 0, n = 0;
+  for (let i = bars.length - 14; i < bars.length; i++){
+    const b = bars[i], p = bars[i-1] ? bars[i-1].c : b.o;
+    s += Math.max(b.h - b.l, Math.abs(b.h - p), Math.abs(b.l - p));
+    n++;
+  }
+  return n ? s / n : 0;
+}
+
+/* ---------- WS kline 流入口(未收盘K线每秒推送, x=true 表示该根收盘) ---------- */
+function pinOnKline(sym, k){
+  if (!k || !sym || !k.t) return;
+  const st = pinEnsureState(sym);
+  const o = +k.o, h = +k.h, l = +k.l, c = +k.c, v = +k.v, t = +k.t;
+  if (!(o > 0 && h >= l && v >= 0)) return;
+  pinCheck(sym, st, t, o, h, l, c, v, false);   // 实时 tick 级检测(含未收盘K线)
+  if (k.x){   // 收盘: 推入bars并更新ATR
+    st.bars.push({ t, o, h, l, c, v });
+    if (st.bars.length > PIN_BARS_KEEP) st.bars.shift();
+    st.atr = calcATR(st.bars);
+  }
+}
+
+/* ---------- 检测: 滑窗偏离 + 回归三态(🟡进行中 → ✅确认 / ⚪失效) ---------- */
+function pinCheck(sym, st, curT, o, h, l, c, v, isReplay){
+  if (st.bars.length < 8) return;             // 启动数据不足
+  const atr10 = st.atr * Math.sqrt(PIN_WINDOW);
+  if (!(atr10 > 0)) return;
+  const win = st.bars.slice(-PIN_WINDOW);     // 最近10根已收盘 + 当前K线 = 窗口
+  const base = win[0].o;                      // 基准价: 窗口第一根开盘价
+  if (!(base > 0)) return;
+  const atrPct = atr10 / base;                               // ★ ATR 按基准价归一(比例尺, 高低价币统一)
+  /* 偏离阈值: 2.5×ATR10(归一) 且 ≥1.5%地板 且 ≤5%上限
+     上限防"瀑布根污染": 刚暴跌完的币 ATR 被拉高, 不设限会在最易出二次插针(清算连锁)的时段失明 */
+  const thr = Math.min(Math.max(PIN_ATR_MULT * atrPct, PIN_MIN_DEV), PIN_MAX_THR);
+
+  /* 窗口极值 + 极值出现时间 + 极值根量能(低点/高点分开记录) */
+  let wLow = l, lowT = curT, lowVol = v, wHigh = h, highT = curT, highVol = v;
+  for (const b of win){
+    if (b.l < wLow){ wLow = b.l; lowT = b.t; lowVol = b.v; }
+    if (b.h > wHigh){ wHigh = b.h; highT = b.t; highVol = b.v; }
+  }
+  /* 量能倍数: 极值根 vs 前20根均量(不含极值根), 低点/高点各自计算 */
+  const volXOf = (t, vol)=>{
+    const hist = st.bars.filter(b=>b.t !== t).slice(-20);
+    let s = 0, n = 0;
+    hist.forEach(b=>{ s += b.v; n++; });
+    return (n && s > 0) ? vol / (s / n) : 0;
+  };
+  const volXLow = volXOf(lowT, lowVol), volXHigh = volXOf(highT, highVol);
+  const nowMs = isReplay ? curT : Date.now();
+
+  /* ✅ 确认: 已挂黄卡就地转正(或新建)。返回 false=被冷却/去重拦截, 调用方回退为黄卡刷新 */
+  const fire = (side, tip, dev, retr, extremeT, volX)=>{
+    const key  = side === "sweep-low" ? "firedLow" : "firedHigh";
+    const pk   = side === "sweep-low" ? "pendingLow" : "pendingHigh";
+    const cdK  = side === "sweep-low" ? "lastFireLow" : "lastFireHigh";   // 分方向冷却: 上插/下插互不干扰
+    if (st[key] === extremeT) return false;                   // 同一极值只报一次
+    if (nowMs - st[cdK] < PIN_COOLDOWN) return false;          // 同方向 15 分钟冷却(另一方向不受影响)
+    st[key] = extremeT;
+    st[cdK] = nowMs;
+    /* 强针: 量能5倍爆量, 或 偏离≥5×ATR10(归一)且绝对幅度≥3% */
+    const strong = volX >= PIN_STRONG_VOL || (dev >= PIN_STRONG_DEV * atrPct && dev >= 0.03);
+    const trend = trendDirAt(sym, nowMs);   // 事件时刻的趋势快照(未加载时'na', fetchTrend 完成后回填)
+    const pend = st[pk];
+    let ev;
+    if (pend && pend.status === "pending"){
+      /* 黄卡转正: 原卡片保留, 时间改为确认时刻(排序=确认时间), 不重复开卡 */
+      pend.status = "confirmed"; pend.replay = !!isReplay;
+      pend.strong = strong; pend.tip = tip; pend.dev = dev; pend.retr = retr;
+      pend.volX = volX; pend.px = c; pend.ts = nowMs;
+      if (trend !== "na") pend.trend = trend;
+      st[pk] = null;
+      ev = pend;
+    } else {
+      ev = {
+        ts: nowMs, sym, side, status: "confirmed",
+        tip, base, dev, retr, volX, strong, px: c,
+        replay: !!isReplay, trend,
+      };
+      pinEvents.push(ev);
+    }
+    if (pinEvents.length > PIN_MAX_EVENTS + 40) pinEvents = pinEvents.slice(-PIN_MAX_EVENTS);
+    if (!isReplay && pinIsCross(ev)){
+      /* 逆势(插针方向与趋势相反): 不响铃不角标不推送, 仅刷新视图(卡片淡化置底供验证) */
+      if (curView === "pin") render();
+    } else if (!isReplay){
+      pinBeep(strong);                          // 只有确认才提示
+      if (ev.strong) sendPinCard(ev);           // ✨强针推飞书(内部再判顺势/回放)
+      if (curView === "pin") render();
+      else { pinUnread++; pinRefreshTab(); }     // 角标只计确认
+    }
+    savePinEvents();
+    return true;
+  };
+
+  /* 🟡 进行中: 偏离已达标但未回归60%, 挂黄卡静默刷新(不出声、不角标); ≥10% 刺眼标注 */
+  const updPend = (side, tip, dev, retr, volX, extremeT)=>{
+    const pk  = side === "sweep-low" ? "pendingLow" : "pendingHigh";
+    const cdK = side === "sweep-low" ? "lastFireLow" : "lastFireHigh";
+    if (st[pk] && st[pk].status !== "pending") st[pk] = null;   // 兑底: 引用已终态
+    if (!st[pk]){
+      if (nowMs - st[cdK] < PIN_COOLDOWN) return;         // 同方向冷却期不新开黄卡
+      const ev = { ts: nowMs, sym, side, status: "pending", tip, base, dev, retr, volX, strong: false, px: c, replay: !!isReplay, lastUpd: nowMs, trend: trendDirAt(sym, nowMs) };
+      pinEvents.push(ev);
+      if (pinEvents.length > PIN_MAX_EVENTS + 40) pinEvents = pinEvents.slice(-PIN_MAX_EVENTS);
+      st[pk] = ev;
+      savePinEvents();
+      if (!isReplay) playZZ();   // 📌进行中提示音(新黄卡出现响一次; 回放/恢复不响)
+      return;
+    }
+    /* 已有黄卡 → 就地刷新数值(针尖更深/回归变化), 正在看插针视图则刷新列表 */
+    const ev = st[pk];
+    ev.tip = tip; ev.dev = dev; ev.retr = retr; ev.volX = volX; ev.px = c;
+    ev.base = base; ev.lastUpd = nowMs;
+    if (!isReplay && curView === "pin") scheduleRender();
+    savePinEvents();
+  };
+
+  /* ⚪ 失效: 窗口偏离不再达标(10分钟窗口滚过也没等到回归60%) */
+  const failPend = (side)=>{
+    const pk = side === "sweep-low" ? "pendingLow" : "pendingHigh";
+    const ev = st[pk];
+    if (ev && ev.status === "pending"){ ev.status = "failed"; st[pk] = null; if (!isReplay && curView === "pin") scheduleRender(); savePinEvents(); }
+  };
+
+  /* ⬇️ 扫下方: 窗口最低点相对基准大幅下探, 回归≥60%才确认偏多 */
+  if (wLow > 0){
+    const dev = (base - wLow) / base;
+    if (dev >= thr){
+      const depth = Math.max(base - wLow, 1e-12);
+      const retr = (c - wLow) / depth;
+      if (!(retr >= PIN_RETR && fire("sweep-low", wLow, dev, retr, lowT, volXLow))){
+        updPend("sweep-low", wLow, dev, Math.min(retr, 0.99), volXLow, lowT);   // 未确认: 挂黄/刷新黄
+      }
+    } else {
+      failPend("sweep-low");   // 偏离不再达标: 黄卡转灰"未回归失效"
+    }
+  }
+  /* ⬆️ 扫上方: 窗口最高点大幅冲高, 回归≥60%才确认偏空 */
+  {
+    const dev = (wHigh - base) / base;
+    if (dev >= thr){
+      const depth = Math.max(wHigh - base, 1e-12);
+      const retr = (wHigh - c) / depth;
+      if (!(retr >= PIN_RETR && fire("sweep-high", wHigh, dev, retr, highT, volXHigh))){
+        updPend("sweep-high", wHigh, dev, Math.min(retr, 0.99), volXHigh, highT);
+      }
+    } else {
+      failPend("sweep-high");
+    }
+  }
+
+  /* 🎯 回踩入场监控: 顺势确认事件, 现价离开 针尖↔基准 35%~65% 区间后再次进入 → 提示一次
+     (回踩 = 价格自区间外再度回到针尖与基准之间的回踩带, 供人工择机入场) */
+  pinEvents.forEach(ev=>{
+    if (ev.sym !== sym || ev.status !== "confirmed" || ev.replay || ev.reentry) return;
+    if (ev.trend !== "up" && ev.trend !== "down") return;   // 仅顺势(横盘/未加载不提示)
+    if (pinIsCross(ev)) return;
+    const lo = Math.min(ev.tip, ev.base), hi = Math.max(ev.tip, ev.base);
+    const zLo = lo + (hi - lo) * PIN_RE_LO, zHi = lo + (hi - lo) * PIN_RE_HI;
+    const inZone = c >= zLo && c <= zHi;
+    if (!inZone) ev.reArmed = true;         // 离开回踩区 → 待命
+    else if (ev.reArmed){                    // 再进入回踩区 → 回踩入场提示
+      ev.reentry = nowMs;
+      if (!isReplay){ pinBeep(false); if (curView === "pin") scheduleRender(); }
+      savePinEvents();
+    }
+  });
+}
+
+/* ---------- 订阅管理: TOP100 按成交额, 每5分钟重估增量增删 ---------- */
+let pinEvalBusy = false;
+async function pinEvalSubs(){
+  if (pinEvalBusy) return;
+  pinEvalBusy = true;
+  try{
+    const rows = Object.keys(volMap)
+      .filter(s=>RANK_RE.test(s) && !CSOP_RE.test(s) && !PIN_BLOCK_RE.test(s))   // 人工盯盘: 不卡成交额门槛, TOP100 全要(仍剔交割/CSOP)
+      .sort((a,b)=>volMap[b] - volMap[a])
+      .slice(0, PIN_TOP_N);
+    const want = new Set(rows.map(s=>s.toLowerCase() + "@kline_1m"));
+    const add = [...want].filter(s=>!pinStreams.has(s));
+    const del = [...pinStreams].filter(s=>!want.has(s));
+    pinStreams = want;
+    if (ws && wsAlive && add.length) ws.send(JSON.stringify({method:"SUBSCRIBE", params:add, id:pinMsgId++}));
+    if (ws && wsAlive && del.length) ws.send(JSON.stringify({method:"UNSUBSCRIBE", params:del, id:pinMsgId++}));
+    /* 新订阅币拉历史K线: 分批并发(每批6个)避免瞬间打满浏览器连接池 */
+    for (let i = 0; i < add.length; i += 6){
+      add.slice(i, i + 6).forEach(s=>pinInitHistory(s.split("@")[0].toUpperCase()));
+      if (i + 6 < add.length) await new Promise(r=>setTimeout(r, 300));
+    }
+    if (curView === "pin") render();
+  } finally { pinEvalBusy = false; }
+}
+function pinBoot(){
+  if (pinBooted) return;
+  pinBooted = true;
+  loadPinEvents();                        // ★ 恢复当天事件(刷新不丢, 旧黄卡自动转灰)
+  pinEvalSubs();
+  setInterval(pinEvalSubs, 5*60*1000);    // 每5分钟按成交额重估订阅
+  setInterval(refreshAllTrends, PIN_TREND_REFR);   // 每5分钟重估全部币的 5m 趋势
+  /* 📊 30分钟自证: 确认事件到期后按现价判涨跌(红涨绿跌), 统计信号后验胜率 */
+  setInterval(()=>{
+    const now = Date.now();
+    let changed = false;
+    pinEvents.forEach(ev=>{
+      if (ev.status !== "confirmed" || ev.replay || ev.verify !== undefined) return;
+      if (now - ev.ts < PIN_VERIFY_MS) return;
+      const p = priceMap[ev.sym];
+      if (!(typeof p === "number" && isFinite(p) && ev.px > 0)) return;
+      ev.verify = p >= ev.px ? "win" : "lose";     // win=30分后价涨(红) / lose=价跌(绿)
+      ev.verifyPct = (p - ev.px) / ev.px * 100;
+      changed = true;
+    });
+    if (changed){ savePinEvents(); if (curView === "pin") render(); }
+  }, 30*1000);
+}
+async function pinInitHistory(sym){
+  try{
+    const ctl = new AbortController();
+    const timer = setTimeout(()=>ctl.abort(), 10000);
+    const r = await fetch(`${PIN_REST}?symbol=${encodeURIComponent(sym)}&interval=1m&limit=120`, {cache:"no-store", signal:ctl.signal});
+    clearTimeout(timer);
+    const arr = await r.json();
+    if (!Array.isArray(arr) || arr.length < 20) return;
+    const st = pinEnsureState(sym);
+    const bars = arr.map(k=>({ t:+k[0], o:+k[1], h:+k[2], l:+k[3], c:+k[4], v:+k[5] }));
+    /* 合并: 历史K线 + 已积累的实时K线(按时间戳去重, 实时的保留), 避免与WS竞态 */
+    if (st.bars.length){
+      const have = new Set(st.bars.map(b=>b.t));
+      st.bars = bars.filter(b=>!have.has(b.t)).concat(st.bars).slice(-PIN_BARS_KEEP);
+    } else {
+      st.bars = bars.slice(-PIN_BARS_KEEP);
+    }
+    st.atr = calcATR(st.bars);
+    pinReplay(sym, st, bars);   // 用完整120根历史回放
+    fetchTrend(sym);            // 趋势并行加载(完成后自动回填已生成事件的trend字段)
+  }catch(_){}
+}
+
+/* ---------- 历史回放: 用收盘K线逐根推进, 找最近2小时插针(复盘用) ---------- */
+function pinReplay(sym, st, bars){
+  const now = Date.now();
+  const CUTOFF = now - 2*60*60*1000;   // 只回放最近2小时
+  let lastFireLow = 0, lastFireHigh = 0;   // 分方向冷却游标(回放中独立推进)
+  for (let i = 15; i < bars.length; i++){
+    const b = bars[i];
+    if (b.t < CUTOFF) continue;
+    /* 模拟: 把前 i 根当作已收盘序列, 当前根 b 作为最新K线做一次检测 */
+    const saved = st.bars, savedAtr = st.atr, savedLfL = st.lastFireLow, savedLfH = st.lastFireHigh;
+    st.bars = bars.slice(0, i);
+    st.atr = calcATR(st.bars);
+    st.lastFireLow = lastFireLow; st.lastFireHigh = lastFireHigh;
+    pinCheck(sym, st, b.t, b.o, b.h, b.l, b.c, b.v, true);
+    lastFireLow = st.lastFireLow; lastFireHigh = st.lastFireHigh;   // 确认/黄卡新开都会写入, 无条件跟随
+    st.bars = saved; st.atr = savedAtr; st.lastFireLow = savedLfL; st.lastFireHigh = savedLfH;
+  }
+  /* 回放结束: 挂着"进行中"超12分钟未更新的历史残留 → 判失效(防旧黄卡长期占顶) */
+  pinState.forEach(ss=>{
+    ["pendingLow","pendingHigh"].forEach(pkk=>{
+      const ev = ss[pkk];
+      if (ev && ev.status === "pending" && now - (ev.lastUpd||0) > 12*60*1000){ ev.status = "failed"; ss[pkk] = null; }
+    });
+  });
+  /* 回放针自证: 用120根历史K线, 若 ts+30min 已落在数据内则直接判涨跌(刷新即时见统计) */
+  pinEvents.forEach(ev=>{
+    if (ev.sym !== sym || ev.status !== "confirmed" || ev.verify !== undefined) return;
+    if (!(ev.px > 0)) return;
+    const target = ev.ts + PIN_VERIFY_MS;
+    const b = bars.find(x=>x.t >= target);
+    if (b && b.c > 0){ ev.verify = b.c >= ev.px ? "win" : "lose"; ev.verifyPct = (b.c - ev.px) / ev.px * 100; }
+  });
+  pinDedupEvents();   // 跨机制去重: 同一根针在 存档/回放 中只保留一条
+  if (curView === "pin") render();
+  savePinEvents();
+}
+
+/* ---------- 插针视图渲染进主列表(🟡进行中置顶, 顺势确认, 逆势/失效淡化置底) ---------- */
+/* 逆势定义(用户定稿): 插针方向与趋势相反 → 逆势。
+   趋势多+向下插(扫下方) 或 趋势空+向上插(扫上方) = 逆势淡化置底;
+   横盘/未加载不区分顺逆(横盘扫荡本就是 SMC 常见结构) */
+function pinIsCross(ev){
+  const t = ev.trend;
+  if (t !== "up" && t !== "down") return false;
+  return (t === "up" && ev.side === "sweep-low") || (t === "down" && ev.side === "sweep-high");
+}
+function renderPinList(){
+  const cross = ev=>pinIsCross(ev);
+  /* 大号方向箭头(卡片右侧): 下插=红·做多信号 / 上插=绿·做空信号 / 进行中=黄 / 失效=灰 */
+  const ARROW_DOWN = '<path d="M17,6 H31 V26 H40 L24,44 L8,26 H17 Z"/>';
+  const ARROW_UP   = '<path d="M17,44 H31 V22 H40 L24,4 L8,22 H17 Z"/>';
+  const all = pinEvents.slice().sort((a,b)=>{
+    const rk = e=>e.status === "pending" ? 0 : (e.status === "confirmed" && !cross(e) ? 1 : 2);
+    const ra = rk(a), rb = rk(b);
+    if (ra !== rb) return ra - rb;   // 0进行中置顶 > 1顺势确认 > 2逆势/失效
+    return b.ts - a.ts;
+  });
+  const evs = all.slice(0, RENDER_LIMIT);   // DOM 仅渲染前40条(与异动卡片一致, 防卡顿)
+  const nPend = all.filter(e=>e.status === "pending").length;
+  const nFail = all.filter(e=>e.status === "failed").length;
+  const nCross = all.filter(e=>e.status === "confirmed" && cross(e)).length;
+  const nWin = all.filter(e=>e.verify === "win").length;
+  const nLose = all.filter(e=>e.verify === "lose").length;
+  $("count").textContent = all.length
+    ? `📌 插针 ${all.length} 条${all.length > RENDER_LIMIT ? `（显示前${RENDER_LIMIT}）` : ""} · 🟡进行中 ${nPend} · ⚪未回归 ${nFail} · ✗逆势 ${nCross}` + ((nWin + nLose) ? ` · 📊30分自证 ${nWin}胜/${nLose}败` : "")
+    : (pinStreams.size ? "📌 监测中 · 等待插针事件…" : "📌 监测初始化中…");
+  const list = $("list");
+  list.innerHTML = "";
+  if (!evs.length){
+    const d = document.createElement("div");
+    d.className = "empty";
+    d.textContent = "📌 暂无插针事件 · 1m滑窗监测中";
+    list.appendChild(d);
+    return;
+  }
+  const frag = document.createDocumentFragment();
+  evs.forEach(ev=>{
+    const isLow = ev.side === "sweep-low";
+    const pend = ev.status === "pending";
+    const fail = ev.status === "failed";
+    const isCross = cross(ev);
+    const thin = isFinite(volMap[ev.sym]) && volMap[ev.sym] < PIN_VOL_THIN;   // 💤无量: 24H成交额过低
+    const hp = highMap[ev.sym], lp = lowMap[ev.sym];
+    let hl24 = "";
+    if (isFinite(hp) && isFinite(lp) && hp > 0 && lp > 0){
+      const touchH = !isLow && ev.tip >= hp * 0.995;   // 上插针尖贴近/越过 24H 高
+      const touchL = isLow && ev.tip <= lp * 1.005;    // 下插针尖贴近/跌破 24H 低
+      hl24 = `<span class="pin-hl24${(touchH || touchL) ? " touch" : ""}"><span class="lb">24H </span>${fmtPrice(lp)} ~ ${fmtPrice(hp)}${touchH ? " · 触24H高" : (touchL ? " · 触24H低" : "")}</span>`;
+    }
+    let dirCls, dirTxt, itemCls = "", pxLabel = "触发价 ", arrowCls;
+    if (pend){
+      /* 进行中: 状态徽章黄, 但大箭头已按方向着色(上插红↑/下插绿↓, 红涨绿跌)
+         偏离≥10% 超级插针 → 刺眼橙红闪烁 */
+      dirCls = "pending";  dirTxt = isLow ? "向下插针中" : "向上插针中";   itemCls = " pending"; pxLabel = "现价 "; arrowCls = isLow ? "low" : "high";
+      if (Math.abs(ev.dev) >= PIN_HOT_DEV) itemCls += " hot";
+    } else if (fail){
+      dirCls = "failed";    dirTxt = "未回归失效";    itemCls = " failed"; arrowCls = "fail";
+    } else {
+      dirCls = isLow ? "sweep-low" : "sweep-high";
+      dirTxt = isLow ? "扫下方 · 偏多" : "扫上方 · 偏空";
+      arrowCls = isLow ? "low" : "high";
+      if (isCross) itemCls = " cross";   // 逆势: 淡化置底(不响铃不角标, 供回头验证)
+    }
+    /* 趋势标签(红涨绿跌): 角度制显示, ≥45° 标"强" */
+    const ti = trendAt(ev.sym, ev.ts);
+    let trendCls = "na", trendTxt = "⏳ 趋势加载";
+    if (ti.dir === "up" || ti.dir === "down"){
+      const sgn = ti.deg >= 0 ? "+" : "−";
+      const strong = Math.abs(ti.deg) >= PIN_TREND_STRONG;
+      if (ti.dir === "up"){ trendCls = "up";   trendTxt = `📈 ${strong ? "强多" : "趋势多"} ${sgn}${Math.abs(ti.deg)}°`; }
+      else                 { trendCls = "down"; trendTxt = `📉 ${strong ? "强空" : "趋势空"} ${sgn}${Math.abs(ti.deg)}°`; }
+    } else if (ti.dir === "flat"){
+      trendCls = "flat"; trendTxt = `➖ 横盘 ${ti.deg >= 0 ? "+" : "−"}${Math.abs(ti.deg)}°`;
+    }
+    const strongCls = (ev.strong && !pend && !fail) ? " strong" : "";
+    const d = document.createElement("div");
+    d.className = "pin-item" + itemCls + strongCls;
+    d.title = "点击复制币种名";
+    const devTxt = isLow ? "-" : "+";
+    const volTxt = ev.volX >= 1 ? ev.volX.toFixed(1) + "×" : "—";
+    const icon = (ev.strong && !pend && !fail) ? "📌✨" : "📌";
+    d.innerHTML = `
+      <div class="pin-main">
+        <div class="pin-row1">
+          <span class="pin-sym">${icon} ${ev.sym}</span>
+          <span class="tag">永续</span>
+          <span class="pin-trend ${trendCls}">${trendTxt}</span>
+          <span class="pin-dir ${dirCls}">${dirTxt}</span>
+          ${isCross ? '<span class="pin-tag cross-tag">✗ 逆势</span>' : ''}
+          ${ev.reentry ? '<span class="pin-tag zone">🎯 回踩入场区</span>' : ''}
+          ${thin ? '<span class="pin-tag thin">💤 无量</span>' : ''}
+          ${ev.restored ? '<span class="pin-tag">存档</span>' : (ev.replay ? '<span class="pin-tag">回放</span>' : '')}
+        </div>
+        <div class="pin-row2">
+          <span><span class="lb">针尖 </span>${fmtPrice(ev.tip)}</span>
+          <span><span class="lb">偏离 </span>${(pend && Math.abs(ev.dev) >= PIN_HOT_DEV) ? `<span class="hot-dev">${devTxt}${(ev.dev*100).toFixed(1)}%</span>` : `${devTxt}${(ev.dev*100).toFixed(1)}%`}</span>
+          <span><span class="lb">回归 </span>${Math.min(ev.retr*100, 100).toFixed(0)}%</span>
+          <span><span class="lb">量能 </span>${volTxt}</span>
+          <span><span class="lb">${pxLabel.trim()} </span>${fmtPrice(ev.px)}</span>
+          ${hl24}
+        </div>
+        <div class="pin-time">${tsFmt(ev.ts)}${pend ? " · 待回归≥60%" : ""}${(pend && Math.abs(ev.dev) >= PIN_HOT_DEV) ? " · ⚠️ 超偏≥10%" : ""}${ev.verify ? ` · <span class="pin-verify ${ev.verify}">${ev.verify === "win" ? "✅" : "❌"} 30分钟后 ${ev.verifyPct >= 0 ? "+" : ""}${ev.verifyPct.toFixed(2)}%</span>` : ""}${ev.reentry ? ` · 🎯 ${tsFmt(ev.reentry)} 进入回踩区` : ""}</div>
+      </div>
+      <div class="pin-side">
+        <span class="pin-arrow ${arrowCls}"><svg viewBox="0 0 48 48">${isLow ? ARROW_DOWN : ARROW_UP}</svg></span>
+      </div>`;
+    d.onclick = ()=>copySymbol(ev.sym).then(ok=>{
+      d.style.borderColor = ok ? "#fcd535" : "#f6465d";
+      setTimeout(()=>{ d.style.borderColor = ""; }, 800);
+    });
+    frag.appendChild(d);
+  });
+  list.appendChild(frag);
+}
+
+/* ---------- 插针提示音(合成三角波 G4→C5→G4, 与本地铃声/异动提示区分) ---------- */
+let pinAudioCtx = null;
+function pinBeep(strong){
+  if (!soundOn) return;
+  try{
+    pinAudioCtx = pinAudioCtx || new (window.AudioContext||window.webkitAudioContext)();
+    if (pinAudioCtx.state === "suspended"){ pinAudioCtx.resume().catch(()=>{}); }
+    const notes = strong ? [392.00, 523.25, 659.25, 392.00] : [392.00, 523.25, 392.00];
+    const t0 = pinAudioCtx.currentTime;
+    notes.forEach((freq, i)=>{
+      const osc = pinAudioCtx.createOscillator(), g = pinAudioCtx.createGain();
+      osc.type = "triangle";
+      osc.frequency.value = freq;
+      const start = t0 + i * 0.13;
+      const dur = (i === notes.length - 1) ? 0.26 : 0.12;
+      osc.connect(g); g.connect(pinAudioCtx.destination);
+      g.gain.setValueAtTime(0, start);
+      g.gain.linearRampToValueAtTime(.14, start + 0.02);
+      g.gain.exponentialRampToValueAtTime(.001, start + dur);
+      osc.start(start); osc.stop(start + dur + 0.05);
+    });
+  }catch(_){}
+}
+</script>
+</body>
+</html>
