@@ -1104,6 +1104,17 @@ setInterval(()=>{
   }
 }, 15000);
 
+/* ---------- 标签页休眠恢复(Edge"睡眠标签/效率模式"会把后台页冻结, 导致卡在插针中/更新慢) ----------
+   切回前台立即: ①WS 超25s无消息则重连(不等退避) ②REST 校准补数据 ③刷新视图 —— 几秒内追上进度 */
+document.addEventListener("visibilitychange", ()=>{
+  if (document.hidden) return;
+  if (!wsAlive || Date.now() - lastMsgTime > 25000){
+    try{ connectWS(); }catch(_){}
+  }
+  fetchMovers(false);
+  if (curView === "pin") render();
+});
+
 /* ---------- 定时校准(30s, 以 REST 为准) ---------- */
 setInterval(()=>{ fetchMovers(false); }, CALIBRATE_MS);
 
