@@ -37,9 +37,10 @@
   .rowwrap .tabs { flex:1 1 auto; min-width:0; }   /* 占满剩余宽度，滚动区最大化 */
   .dimlab { font-size:11px; color:#848e9c; flex:0 0 auto; }
   .toolbar { display:flex; justify-content:space-between; align-items:center; margin:4px 0 12px; font-size:12px; color:#848e9c; }
-  .sound { cursor:pointer; background:#181c23; border:1px solid #232a33; color:#848e9c; border-radius:8px; padding:4px 12px; font-size:12px; transition:all .15s; }
+  .sound { cursor:pointer; background:#181c23; border:1px solid #232a33; color:#848e9c; border-radius:8px; padding:5px 10px; font-size:16px; line-height:1; transition:all .15s; filter:grayscale(1) opacity(.55); }   /* 纯图标: 默认灰=关 */
   .sound:focus-visible { outline:2px solid #fcd535; outline-offset:2px; }
-  .sound.on { color:#fcd535; border-color:#3a4759; }
+  .sound.on { color:#fcd535; border-color:#3a4759; filter:none; opacity:1; }            /* 点击开=彩色 */
+  .sound.always { filter:none; opacity:1; }                                            /* 测试键无开关概念, 常彩 */
   .list { display:flex; flex-direction:column; gap:8px; }
   .item { position:relative; cursor:pointer; display:grid; grid-template-columns:minmax(0,1fr) auto; grid-template-rows:auto auto; grid-template-areas:"sym pctrow" "ts pricow"; gap:4px 12px; background:#12161c; border:1px solid #1e242c; border-radius:12px; padding:12px 16px; transition:border-color .2s, transform .08s; }
   .icon { width:24px; height:24px; border-radius:6px; display:inline-flex; align-items:center; justify-content:center; flex:0 0 auto; vertical-align:middle; }
@@ -675,8 +676,7 @@ function playBig(){ lastBigTs = Date.now(); playSound(sndBig); }   // 5分钟大
 function playZZ(){ playSound(sndZZ); }   // 📌进行中(新黄卡出现)提示音: 本地 ZZ.mp3
 $("sound").onclick = ()=>{
   soundOn = !soundOn;
-  $("sound").textContent = soundOn ? "🔔 声音开" : "🔔 声音关";
-  $("sound").classList.toggle("on", soundOn);
+  $("sound").classList.toggle("on", soundOn);   /* 纯图标: 开=彩色, 关=灰 */
 };
 /* 测试铃声按钮：单击=正常提示(aa) 双击=5m大涨大跌(zzz)。
    双击会先触发两次单击→用延时取消单击, 保证双击只播zzz不先播aa；
@@ -694,8 +694,7 @@ $("testSnd").ondblclick = ()=>{
 /* ---------- 飞书推送(5M大异动) ---------- */
 $("feishuBtn").onclick = ()=>{
   feishuOn = !feishuOn;
-  $("feishuBtn").textContent = feishuOn ? "📮 飞书 开" : "📮 飞书 关";
-  $("feishuBtn").classList.toggle("on", feishuOn);
+  $("feishuBtn").classList.toggle("on", feishuOn);   /* 纯图标: 开=彩色, 关=灰 */
 };
 /* 双击飞书按钮 = 手动测试推送通道(验证 file:// 下能否发出) */
 $("feishuBtn").ondblclick = ()=>{
