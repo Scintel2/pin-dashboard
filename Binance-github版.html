@@ -124,7 +124,7 @@
   .pin-main { flex:1 1 auto; min-width:0; display:flex; flex-direction:column; gap:5px; }
   .pin-side { flex:0 0 auto; display:flex; align-items:center; }   /* 右侧大方向箭头区(原空白区) */
   .pin-arrow { width:56px; height:88px; border-radius:14px; display:flex; align-items:center; justify-content:center; flex:0 0 auto; }   /* 容器高88, 容纳80px长箭头 */
-  .pin-arrow svg { width:46px; height:80px; display:block; }   /* 箭头拉长到80px */
+  .pin-arrow svg { width:34px; height:46px; display:block; }   /* 框内小箭头(缩小), 外框尺寸不变, 浮动幅度18px */
   .pin-arrow.low  { background:rgba(46,189,133,.10); border:1.5px solid rgba(46,189,133,.45); box-shadow:0 0 12px rgba(46,189,133,.25); } .pin-arrow.low  svg path { fill:#2ebd85; }   /* 扫下方=绿·向下(红涨绿跌, 含进行中) */
   .pin-arrow.high { background:rgba(246,70,93,.10);  border:1.5px solid rgba(246,70,93,.45);  box-shadow:0 0 12px rgba(246,70,93,.25); }  .pin-arrow.high svg path { fill:#f6465d; }  /* 扫上方=红·向上(红涨绿跌, 含进行中) */
   .pin-arrow.fail { background:rgba(112,122,138,.06); border:1.5px solid rgba(112,122,138,.3); }                     .pin-arrow.fail svg path { fill:#707a8a; }
@@ -142,11 +142,11 @@
   /* 🟡进行中 / ⚪失效 状态样式; 超偏≥10% 进行中=刺眼橙红闪烁(⚠️远离插针针尖, 可能在扫大流动性) */
   .pin-item.pending { border-color:#c9a227; background:linear-gradient(100deg,#2b2408 0%,#1d1b0c 55%,#12161c 100%); animation:pendingGlow 2s ease-in-out infinite; }
   @keyframes pendingGlow { 0%,100%{ box-shadow:0 0 6px rgba(201,162,39,.22);} 50%{ box-shadow:0 0 18px rgba(201,162,39,.6);} }
-  /* 进行中卡片: 右侧大箭头轻柔上下浮动(0%与100%同轨→重建不跳变; 慢周期小幅度→不鬼畜) */
+  /* 进行中卡片: 右侧大箭头大幅上下浮动(0↔18px 明显但不鬼畜: 同轨慢周期) */
   .pin-item.pending .pin-arrow.low svg  { animation:arrowDriftSmoothDown 2.4s ease-in-out infinite; }
   .pin-item.pending .pin-arrow.high svg { animation:arrowDriftSmoothUp 2.4s ease-in-out infinite; }
-  @keyframes arrowDriftSmoothDown { 0%,100%{ transform:translateY(0);} 50%{ transform:translateY(-6px);} }
-  @keyframes arrowDriftSmoothUp   { 0%,100%{ transform:translateY(0);} 50%{ transform:translateY(6px);} }
+  @keyframes arrowDriftSmoothDown { 0%,100%{ transform:translateY(0);} 50%{ transform:translateY(-18px);} }
+  @keyframes arrowDriftSmoothUp   { 0%,100%{ transform:translateY(0);} 50%{ transform:translateY(18px);} }
   .pin-item.pending.hot { border-color:#ff5e2b; background:linear-gradient(100deg,#3a1504 0%,#2b0f06 55%,#12161c 100%); animation:pinHotGlow 1.1s ease-in-out infinite; }
   @keyframes pinHotGlow { 0%,100%{ box-shadow:0 0 10px rgba(255,94,43,.35);} 50%{ box-shadow:0 0 26px rgba(255,94,43,.85);} }
   .pin-row2 .hot-dev { color:#ff8a4d; font-weight:800; text-shadow:0 0 8px rgba(255,94,43,.8); font-size:17px; }
