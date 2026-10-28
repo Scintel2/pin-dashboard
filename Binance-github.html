@@ -278,7 +278,8 @@ async function fapi(path){   // fapi 路径请求(带查询串); 候选池轮询
 /* ★第十一轮④ Step2(2026-10-29): webhook 从明文硬编码改为 localStorage 可覆盖+占位串。
    背景: 旧 hook 已进 git 历史(公开仓库)成事实泄露面，Step1 用户手工换新 hook 并入 localStorage。
    正则 ^锚定+完整 host+path 前缀——钉钉(oapi.dingtalk.com/robot/send?access_token) / 企微(qyapi.weixin.qq.com/cgi-bin/webhook/send?key) 全拒。 */
-const FEISHU_WEBHOOK = localStorage.getItem("feishu_webhook") || "https://open.feishu.cn/open-apis/bot/v2/hook/REPLACE_WITH_YOUR_HOOK";
+const FEISHU_WEBHOOK = (localStorage.getItem("feishu_webhook") || "").trim()
+  || "https://open.feishu.cn/open-apis/bot/v2/hook/REPLACE_WITH_YOUR_HOOK";   /* ★v4 P3: trim——粘贴带尾空格/换行时 ^...$ 锚定正则会失败, 用户无感知配置失效 */
 const _whConfigured = /^https:\/\/open\.feishu\.cn\/open-apis\/bot\/v2\/hook\/[0-9a-f-]{20,}$/i.test(FEISHU_WEBHOOK);
 if (!_whConfigured){
   console.warn("[飞书] Webhook 未配置。控制台执行 localStorage.setItem('feishu_webhook','你的hook') 后刷新；无 hook 时不推送。");
@@ -767,14 +768,22 @@ $("feishuBtn").onclick = ()=>{
 };
 /* 双击飞书按钮 = 手动测试推送通道(验证 file:// 下能否发出) */
 $("feishuBtn").ondblclick = ()=>{
+  /* ★v4 P2(拍板A): 未配置时给可见反馈——双击是排障动作, 静默 return=用户"双击没反应"无感知;
+     footer 亮 ✗(带 title 悬停看根因)+console warn。两级信息不增加 UI 面积。 */
+  if (!_whConfigured){
+    console.warn("[飞书] 未配置 webhook。控制台执行 localStorage.setItem('feishu_webhook','你的hook') 后刷新");
+    markPush(false, "未配置 webhook");
+    return;
+  }
   sendFeishu([{symbol: "测试推送", priceChange: 0.05, openTime: Date.now(), createTimestamp: Date.now(), period: "5m", eventType: "UP_2", noticeType: "PRICE_CHANGE"}]);
 };
 /* 推送状态显示(footer)：用户可直观看到推送是否工作 */
-function markPush(ok){
+function markPush(ok, reason){
   const el = $("pushStatus");
   if (!el) return;
   const d = new Date();
-  el.innerHTML = ` · <span style="color:${ok?"#2ebd85":"#f6465d"}">最后推送 ${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())} ${ok?"✓":"✗"}</span>`;
+  const tip = reason ? ` title="${reason}"` : "";   /* ★v4 P2 增强: ✗ 挂 title 悬停看根因——纯视觉用户看✗, 好奇用户悬看原因; reason 由代码内部传入无引号 */
+  el.innerHTML = ` · <span${tip} style="color:${ok?"#2ebd85":"#f6465d"}">最后推送 ${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())} ${ok?"✓":"✗"}</span>`;
 }
 
 /* ---------- 价格表(网页端显示 + 飞书推送共用; REST 并入 fapi 双域) ---------- */
@@ -963,6 +972,7 @@ async function sendFeishu(items){
 
 /* ---------- 飞书通用发送(双通道: cors fetch → no-cors 兜底, 与 sendFeishu 同套逻辑) ---------- */
 function postCard(card, tag){
+  if (!_whConfigured) return;   /* ★v4 P0②: sendPinCard → postCard 与 sendFeishu 共用同一 webhook, 未配置时同样拒发——否则打到占位串吃 400/404, markPush(false) 还会把 footer 误亮 ✗ */
   const payload = JSON.stringify({msg_type: "interactive", card});
   const ctl = new AbortController();
   const timer = setTimeout(()=>ctl.abort(), 8000);
@@ -1019,12 +1029,12 @@ function pushItem(e){
   const k = keyOf(e);
   if (seen.has(k)) return false;
   seen.add(k);
+  movers.push(e);   /* ★v4 P0①: 必须在 seen 重建之前 push——否则重建用旧 movers(不含 e), e 的 key 落不进新 seen, 下次同 key 到达会重复入库 */
   /* ★第九轮①(2026-10-29): 裁剪基准与 movers 对齐——旧版按插入序 slice(-1500) 与 movers 按 createTimestamp 排序后 slice(500) 两窗不一致,
    乱序迟到+key 滑出窗+事件仍在 movers→重复入库; 现以 movers 当前集合为准重建(余量 3 倍+100)。 */
   if (seen.size > movers.length * 3 + 100){
     seen = new Set(movers.map(keyOf));
   }
-  movers.push(e);
   return true;
 }
 function ingestAll(list, silent){
@@ -1555,6 +1565,7 @@ function todayStoreKey(){
   return `pinEvents_${_d.getFullYear()}-${pad2(_d.getMonth()+1)}-${pad2(_d.getDate())}`;
 }
 let PIN_STORE_KEY = todayStoreKey();   // 按本地自然天分档(let: 跨天重算需要重赋值)
+let pinSaveTimer = null;   /* ★v4 P3: 声明上移到 rotateStoreKeyIfNeeded 之前——运行时无 TDZ 问题(调用发生时早已初始化), 但 review 读函数体引用下文 let 有认知负担 */
 function rotateStoreKeyIfNeeded(){
   const nk = todayStoreKey();
   if (nk === PIN_STORE_KEY) return;
@@ -1565,7 +1576,6 @@ function rotateStoreKeyIfNeeded(){
   }
   PIN_STORE_KEY = nk;
 }
-let pinSaveTimer = null;
 function savePinEvents(){   // 防抖 400ms 合并写入, 事件变更后落盘
   if (pinSaveTimer) return;
   pinSaveTimer = setTimeout(()=>{
