@@ -379,9 +379,11 @@ refreshSelUI();
 refreshRankTabsUI();
 updateFilterRows();
 
-/* 时间周期筛选 + 📌插针视图标签(视图切换, 与周期筛选互不干扰) */
+/* 时间周期筛选 + 📌插针视图标签(视图切换, 与周期筛选互不干扰)
+   顺序: 全部 → 📌插针 → 5M → 2H → 1D → 5M/新高+新低 */
 periodEl.setAttribute("role", "group");
 periodEl.setAttribute("aria-label", "时间周期筛选");
+let pinTabEl = null;   // 插针标签引用(供 pinRefreshTab 同步选中态/角标)
 PERIODS.forEach(([key,label])=>{
   const t = makeTab(label, key==="all", ()=>{
     if (isRankMode() || curView === "pin") return;   // 榜单/插针视图下周期筛选已禁用
@@ -391,23 +393,25 @@ PERIODS.forEach(([key,label])=>{
   });
   t.classList.add("pt");   // 周期tab标记: 插针视图下单独置灰(不影响插针标签自身)
   periodEl.appendChild(t);
+  /* "全部"渲染完后紧跟插针标签(用户要求: 插针在全部之后、5M之前) */
+  if (key === "all"){
+    pinTabEl = makeTab("📌 插针", false, ()=>{
+      curView = (curView === "pin") ? "movers" : "pin";
+      if (curView === "pin"){ curRank = null; refreshRankTabsUI(); stopRankTimer(); pinUnread = 0; }
+      pinRefreshTab();   // 进出都要同步标签选中态(退出时摘除高亮)
+      updateFilterRows();
+      render();
+    });
+    pinTabEl.classList.add("pin-tab");
+    pinTabEl.setAttribute("aria-label", "插针事件流视图");
+    periodEl.appendChild(pinTabEl);
+  }
 });
-/* 📌 插针标签: 点击进入插针事件流视图, 再点退出回异动流 */
-periodEl.appendChild(document.createElement("span")).className = "pin-sep";
-const pinTab = makeTab("📌 插针", false, ()=>{
-  curView = (curView === "pin") ? "movers" : "pin";
-  if (curView === "pin"){ curRank = null; refreshRankTabsUI(); stopRankTimer(); pinUnread = 0; }
-  pinRefreshTab();   // 进出都要同步标签选中态(退出时摘除高亮)
-  updateFilterRows();
-  render();
-});
-pinTab.classList.add("pin-tab");
-pinTab.setAttribute("aria-label", "插针事件流视图");
-periodEl.appendChild(pinTab);
 function pinRefreshTab(){
-  pinTab.classList.toggle("on", curView === "pin");
-  pinTab.setAttribute("aria-pressed", curView === "pin" ? "true" : "false");
-  pinTab.innerHTML = "📌 插针" + (pinUnread > 0 ? ` <span class="pin-cnt">${pinUnread}</span>` : "");
+  if (!pinTabEl) return;
+  pinTabEl.classList.toggle("on", curView === "pin");
+  pinTabEl.setAttribute("aria-pressed", curView === "pin" ? "true" : "false");
+  pinTabEl.innerHTML = "📌 插针" + (pinUnread > 0 ? ` <span class="pin-cnt">${pinUnread}</span>` : "");
 }
 
 /* 周期匹配：all 不过滤；m5brk = 5M周期 ∪ 今日新高/新低(精确 DAY 前缀，排除周/月) */
