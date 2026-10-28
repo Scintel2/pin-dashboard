@@ -218,7 +218,8 @@
 </div>
 
 <script>
-const REST   = "https://www.icnguxncf.com/fapi/v1/topMovers";
+/* fapi 双域接管(2026-10-28): topMovers/ticker/klines 全部 REST 请求统一收口到
+   REST_BASES + fapi(), 单域旧常量(REST/TICKER_URL/PIN_REST)已删除 */
 const WS_URL = "wss://fstream.yshyqxx.com/market/stream";
 /* Bitget 二源(2026-10-28 实测打通): wss://stream.bitget.cloud 国内域直连, 无 Origin 校验;
    v2 协议 candle1m 频道, snapshot 自带~300 根历史1mK线(免 REST), update 每秒推未收盘根,
@@ -228,6 +229,33 @@ const CALIBRATE_MS  = 30000;   // REST 兜底校准(30s)，WS 驱动实时，RES
 const REST_RETRY_MS = 3000;    // 初始拉取失败重试间隔
 const MAX_ITEMS     = 500;      // 内存中保留的最大条数
 const RENDER_LIMIT  = 40;       // DOM 中最多渲染的条数(性能关键, 减少卡顿)
+/* ★ REST 域名双备份(2026-10-28 用户线索 4 域实测仅 cagxfucoftt.com 可用):
+   fapi 全镜像同源, 主域挂掉自动切到备用域, 之后粘性使用新域(恢复后下轮再试主域)。
+   WS 推送不掉线与此无关——WS 腿在别处(币安主 WS + Bitget 二源), 这里只护 REST 对账/修复腿。 */
+const REST_BASES = ["https://www.icnguxncf.com", "https://www.cagxfucoftt.com"];
+let restBaseIdx = 0;
+async function fapi(path){   // fapi 路径请求(带查询串); 失败自动换域重试一次; 返回 json 或 null
+  const tryOnce = async (base)=>{
+    const ctl = new AbortController();
+    const tm = setTimeout(()=>ctl.abort(), 12000);
+    try{
+      const r = await fetch(base + path + (path.includes("?") ? "&" : "?") + "_t=" + Date.now(), {cache:"no-store", signal: ctl.signal});
+      return await r.json();
+    } finally { clearTimeout(tm); }
+  };
+  try{
+    const j = await tryOnce(REST_BASES[restBaseIdx]);
+    if (j !== null && j !== undefined) return j;
+    throw 0;
+  }catch(_){
+    const other = 1 - restBaseIdx;
+    try{
+      const j = await tryOnce(REST_BASES[other]);
+      if (j !== null && j !== undefined){ restBaseIdx = other; return j; }   // 切换并粘性
+      throw 0;
+    }catch(_2){ return null; }
+  }
+}
 const FEISHU_WEBHOOK = "https://open.feishu.cn/open-apis/bot/v2/hook/6b7e0c87-9b6a-423b-8e03-2765d07a6740"; // 5M异动飞书推送
 
 const CATS = [
@@ -723,60 +751,47 @@ function markPush(ok){
   el.innerHTML = ` · <span style="color:${ok?"#2ebd85":"#f6465d"}">最后推送 ${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())} ${ok?"✓":"✗"}</span>`;
 }
 
-/* ---------- 价格表(网页端显示 + 飞书推送共用) ---------- */
-const TICKER_URL = "https://www.icnguxncf.com/fapi/v1/ticker/24hr";   // 24H ticker：一次取 价格+24h成交额
+/* ---------- 价格表(网页端显示 + 飞书推送共用; REST 并入 fapi 双域) ---------- */
 const priceMap = {};   // symbol -> 当前价
 const volMap   = {};   // symbol -> 24H成交额(quoteVolume)
 const chgMap   = {};   // symbol -> 24H涨跌幅%(榜单合流用, 与价格表同拉同源)
 const highMap  = {};   // symbol -> 24H最高价(插针触24H高低标注用)
 const lowMap   = {};   // symbol -> 24H最低价
 let priceTs = 0;       // 价格表最近一次成功刷新时刻(榜单复用判定依据)
-async function refreshPrices(){   // 全量拉取全部合约 24h 行情(价格+成交额, 每轮轮询刷新)
-  try{
-    const ctl = new AbortController();
-    const timer = setTimeout(()=>ctl.abort(), 12000);
-    const r = await fetch(TICKER_URL, {cache: "no-store", signal: ctl.signal});
-    clearTimeout(timer);
-    const data = await r.json();
-    if (Array.isArray(data)){
-      for (const d of data){
-        if (d && d.symbol){
-          const p = parseFloat(d.lastPrice);
-          if (isFinite(p)) priceMap[d.symbol] = p;
-          const qv = parseFloat(d.quoteVolume);
-          if (isFinite(qv)) volMap[d.symbol] = qv;
-          const cg = parseFloat(d.priceChangePercent);
-          if (isFinite(cg)) chgMap[d.symbol] = cg;
-          const hp = parseFloat(d.highPrice), lp = parseFloat(d.lowPrice);
-          if (isFinite(hp)) highMap[d.symbol] = hp;
-          if (isFinite(lp)) lowMap[d.symbol] = lp;
-        }
+async function refreshPrices(){   // 全量拉取全部合约 24h 行情(价格+成交额, 每轮轮询刷新; fapi 双域自动切换)
+  const data = await fapi("/fapi/v1/ticker/24hr");
+  if (Array.isArray(data)){
+    for (const d of data){
+      if (d && d.symbol){
+        const p = parseFloat(d.lastPrice);
+        if (isFinite(p)) priceMap[d.symbol] = p;
+        const qv = parseFloat(d.quoteVolume);
+        if (isFinite(qv)) volMap[d.symbol] = qv;
+        const cg = parseFloat(d.priceChangePercent);
+        if (isFinite(cg)) chgMap[d.symbol] = cg;
+        const hp = parseFloat(d.highPrice), lp = parseFloat(d.lowPrice);
+        if (isFinite(hp)) highMap[d.symbol] = hp;
+        if (isFinite(lp)) lowMap[d.symbol] = lp;
       }
-      priceTs = Date.now();
-      pinBoot();   // ★ 价格表就绪后初始化插针监测(内部防重入)
-      return true;
     }
-  }catch(_){}
+    priceTs = Date.now();
+    pinBoot();   // ★ 价格表就绪后初始化插针监测(内部防重入)
+    return true;
+  }
   return false;
 }
-async function fetchPrice(symbol){   // 单币补查(快照/成交额缺失时补用，一次补价格+24h成交额)
-  try{
-    const ctl = new AbortController();
-    const timer = setTimeout(()=>ctl.abort(), 5000);
-    const r = await fetch(`${TICKER_URL}?symbol=${encodeURIComponent(symbol)}`, {cache: "no-store", signal: ctl.signal});
-    clearTimeout(timer);
-    const d = await r.json();
-    if (d && d.lastPrice){
-      const p = parseFloat(d.lastPrice);
-      if (isFinite(p)){ priceMap[symbol] = p; }
-        const qv = parseFloat(d.quoteVolume);
-        if (isFinite(qv)){ volMap[symbol] = qv; }
-        const hp = parseFloat(d.highPrice), lp = parseFloat(d.lowPrice);
-        if (isFinite(hp)){ highMap[symbol] = hp; }
-        if (isFinite(lp)){ lowMap[symbol] = lp; }
-        return p;
-    }
-  }catch(_){}
+async function fetchPrice(symbol){   // 单币补查(快照/成交额缺失时补用，一次补价格+24h成交额; fapi 双域自动切换)
+  const d = await fapi("/fapi/v1/ticker/24hr?symbol=" + encodeURIComponent(symbol));
+  if (d && d.lastPrice){
+    const p = parseFloat(d.lastPrice);
+    if (isFinite(p)){ priceMap[symbol] = p; }
+      const qv = parseFloat(d.quoteVolume);
+      if (isFinite(qv)){ volMap[symbol] = qv; }
+      const hp = parseFloat(d.highPrice), lp = parseFloat(d.lowPrice);
+      if (isFinite(hp)){ highMap[symbol] = hp; }
+      if (isFinite(lp)){ lowMap[symbol] = lp; }
+      return p;
+  }
   return NaN;
 }
 function fmtPrice(v){
@@ -788,20 +803,13 @@ function fmtPrice(v){
 /* 查询异动时刻的真实价格(用 K 线开盘价 × (1+priceChange) 计算，
    而不是当前实时价——即使异动发生在很久前也能算准) */
 async function fetchMoverPrice(symbol, openTime, priceChange){
-  try{
-    const ctl = new AbortController();
-    const timer = setTimeout(()=>ctl.abort(), 5000);
-    const url = `https://www.icnguxncf.com/fapi/v1/klines?symbol=${encodeURIComponent(symbol)}&interval=5m&startTime=${openTime}&limit=1`;
-    const r = await fetch(url, {cache: "no-store", signal: ctl.signal});
-    clearTimeout(timer);
-    const klines = await r.json();
-    if (Array.isArray(klines) && klines.length){
-      const open = parseFloat(klines[0][1]);   // K线开盘价
-      if (isFinite(open) && open > 0){
-        return open * (1 + parseFloat(priceChange));   // 异动时刻价格 = 开盘价 × (1 + 涨跌幅)
-      }
+  const klines = await fapi(`/fapi/v1/klines?symbol=${encodeURIComponent(symbol)}&interval=5m&startTime=${openTime}&limit=1`);
+  if (Array.isArray(klines) && klines.length){
+    const open = parseFloat(klines[0][1]);   // K线开盘价
+    if (isFinite(open) && open > 0){
+      return open * (1 + parseFloat(priceChange));   // 异动时刻价格 = 开盘价 × (1 + 涨跌幅)
     }
-  }catch(_){}
+  }
   return NaN;
 }
 async function sendFeishu(items){
@@ -1033,17 +1041,10 @@ function ingestAll(list, silent){
   return added;
 }
 
-/* ---------- REST(兜底数据源) ---------- */
+/* ---------- REST(兜底数据源, fapi 双域自动切换) ---------- */
 async function restFetch(){
-  /* 加时间戳参数强制绕过浏览器/服务器缓存，避免返回旧数据 */
-  const url = REST + (REST.includes("?") ? "&" : "?") + "_t=" + Date.now();
-  const ctl = new AbortController();
-  const timer = setTimeout(()=>ctl.abort(), 15000);   // 15s 超时，防请求挂死阻塞轮询
-  try{
-    const r = await fetch(url, {cache: "no-store", signal: ctl.signal});
-    const data = await r.json();
-    return Array.isArray(data) ? data : [];
-  } finally { clearTimeout(timer); }
+  const data = await fapi("/fapi/v1/topMovers");
+  return Array.isArray(data) ? data : [];
 }
 let restBusy = false;      // REST 并发防重
 let restAttempt = 0;
@@ -1416,7 +1417,7 @@ const PIN_ATR_MULT  = 2.5;        // 偏离 = ATR10 × 2.5
 const PIN_STRONG_DEV= 5;          // 强针偏离倍数
 const PIN_STRONG_VOL= 5;          // 强针量能倍数
 const PIN_BARS_KEEP = 40;         // 每币保留已收盘K线根数(ATR计算+窗口)
-const PIN_REST      = "https://www.icnguxncf.com/fapi/v1/klines";
+
 /* 趋势过滤(5m EMA200 单线斜率·角度制): 阶梯式响应盘面, 震荡下坡不再被 EMA 交叉反复翻面;
    角度 θ = atan(Δ% × K), Δ% = EMA200 近60根(5小时)净位移, K=0.36;
    定标(实测): 20°=1.0%/5h(≈5%/天, 温和爬坡/阴跌达线=趋势) 45°=2.8%/5h(≈13%/天, 单边大行情=强);
@@ -1521,39 +1522,33 @@ function trendAt(sym, ts){
   return ans >= 0 ? tr.series[ans] : {dir:"na", deg:0};
 }
 async function fetchTrend(sym){
-  try{
-    const ctl = new AbortController();
-    const timer = setTimeout(()=>ctl.abort(), 10000);
-    const r = await fetch(`${PIN_REST}?symbol=${encodeURIComponent(sym)}&interval=${PIN_TREND_BAR}&limit=${PIN_TREND_KEEP}`, {cache:"no-store", signal:ctl.signal});
-    clearTimeout(timer);
-    const arr = await r.json();
-    if (!Array.isArray(arr) || arr.length < PIN_TREND_EMA + PIN_TREND_LOOK + 10) return;
-    const closes = arr.map(k=>+k[4]);
-    const e200 = emaSeries(closes, PIN_TREND_EMA);
-    if (e200.length <= PIN_TREND_LOOK) return;
-    /* 每根已收盘 5m bar: θ = atan(近60根 EMA200 净位移% × K)·换算成度 */
-    const n = arr.length;
-    const series = [];
-    for (let j = PIN_TREND_EMA - 1 + PIN_TREND_LOOK; j < n; j++){   // EMA seed 后再回看60根才有完整斜率
-      const iNow = j - (PIN_TREND_EMA - 1);        // e200[i]↔bar(EMA-1+i)
-      const iRef = iNow - PIN_TREND_LOOK;
-      if (iRef < 0) continue;
-      const a = e200[iNow], b = e200[iRef];
-      if (!(b > 0)) continue;
-      const t = +arr[j][0] + 5*60*1000;           // 5m bar 确认时刻(开盘+5m)
-      const d = (a - b) / b * 100;                 // Δ%(近60根=5小时)
-      const deg = Math.atan(d * PIN_TREND_K) * 180 / Math.PI;
-      const dir = deg >= PIN_TREND_MIN ? "up" : (deg <= -PIN_TREND_MIN ? "down" : "flat");
-      series.push({ t, dir, deg: Math.round(deg) });
-    }
-    pinTrend.set(sym, { series, ts: Date.now() });
-    /* 回填: 趋势加载前发生的事件(含回放批)补上事件时刻的趋势 */
-    let backfilled = false;
-    pinEvents.forEach(ev=>{
-      if (ev.sym === sym && (ev.trend === "na" || ev.trend === undefined)){ ev.trend = trendAt(sym, ev.ts).dir; backfilled = true; }
-    });
-    if (backfilled && curView === "pin") render();
-  }catch(_){}
+  const arr = await fapi(`/fapi/v1/klines?symbol=${encodeURIComponent(sym)}&interval=${PIN_TREND_BAR}&limit=${PIN_TREND_KEEP}`);
+  if (!Array.isArray(arr) || arr.length < PIN_TREND_EMA + PIN_TREND_LOOK + 10) return;
+  const closes = arr.map(k=>+k[4]);
+  const e200 = emaSeries(closes, PIN_TREND_EMA);
+  if (e200.length <= PIN_TREND_LOOK) return;
+  /* 每根已收盘 5m bar: θ = atan(近60根 EMA200 净位移% × K)·换算成度 */
+  const n = arr.length;
+  const series = [];
+  for (let j = PIN_TREND_EMA - 1 + PIN_TREND_LOOK; j < n; j++){   // EMA seed 后再回看60根才有完整斜率
+    const iNow = j - (PIN_TREND_EMA - 1);        // e200[i]↔bar(EMA-1+i)
+    const iRef = iNow - PIN_TREND_LOOK;
+    if (iRef < 0) continue;
+    const a = e200[iNow], b = e200[iRef];
+    if (!(b > 0)) continue;
+    const t = +arr[j][0] + 5*60*1000;           // 5m bar 确认时刻(开盘+5m)
+    const d = (a - b) / b * 100;                 // Δ%(近60根=5小时)
+    const deg = Math.atan(d * PIN_TREND_K) * 180 / Math.PI;
+    const dir = deg >= PIN_TREND_MIN ? "up" : (deg <= -PIN_TREND_MIN ? "down" : "flat");
+    series.push({ t, dir, deg: Math.round(deg) });
+  }
+  pinTrend.set(sym, { series, ts: Date.now() });
+  /* 回填: 趋势加载前发生的事件(含回放批)补上事件时刻的趋势 */
+  let backfilled = false;
+  pinEvents.forEach(ev=>{
+    if (ev.sym === sym && (ev.trend === "na" || ev.trend === undefined)){ ev.trend = trendAt(sym, ev.ts).dir; backfilled = true; }
+  });
+  if (backfilled && curView === "pin") render();
 }
 function refreshAllTrends(){   // 分批刷新全部订阅币的 5m 趋势
   const syms = [...pinStreams].map(s=>s.split("@")[0].toUpperCase());
@@ -1798,32 +1793,26 @@ function pinBoot(){
   }, 30*1000);
 }
 async function pinInitHistory(sym){
-  try{
-    const ctl = new AbortController();
-    const timer = setTimeout(()=>ctl.abort(), 10000);
-    const r = await fetch(`${PIN_REST}?symbol=${encodeURIComponent(sym)}&interval=1m&limit=120`, {cache:"no-store", signal:ctl.signal});
-    clearTimeout(timer);
-    const arr = await r.json();
-    const raw = Array.isArray(arr) ? arr.filter(k=>Array.isArray(k) && k.length > 6) : [];
-    if (raw.length < 20) return;
-    /* 剔末根: REST 最后一根几乎总是进行中(未收盘), 其 ohl 中间值被 bars 收录后会被
-       x 去重逻辑拦住, WS 收盘帧无法覆盖 ⇒ 该根永久污染在中间值 —— 干脆不入, 留给 WS 补。 */
-    raw.pop();
-    const st = pinEnsureState(sym);
-    const bars = raw.map(k=>({ t:+k[0], o:+k[1], h:+k[2], l:+k[3], c:+k[4], v:+k[5] }));
-    /* 合并: 历史K线 + 已积累的实时K线(按时间戳去重——三条数据腿同根只计一次)
-       2026-10-28 修排序 bug: 旧版 concat 后不 sort, 修复场景(REST带来晚于现有根的新根)时间序全乱
-       且被 slice(-KEEP) 挤出 —— 修复路径完全失效。改为合并后统一按 t 排序。 */
-    if (st.bars.length){
-      const have = new Set(st.bars.map(b=>b.t));
-      st.bars = bars.filter(b=>!have.has(b.t)).concat(st.bars).sort((a,b)=>a.t-b.t).slice(-PIN_BARS_KEEP);
-    } else {
-      st.bars = bars.slice(-PIN_BARS_KEEP);
-    }
-    st.atr = calcATR(st.bars);
-    pinReplay(sym, st, bars);   // 用完整120根历史回放
-    fetchTrend(sym);            // 趋势并行加载(完成后自动回填已生成事件的trend字段)
-  }catch(_){}
+  const arr = await fapi(`/fapi/v1/klines?symbol=${encodeURIComponent(sym)}&interval=1m&limit=120`);
+  const raw = Array.isArray(arr) ? arr.filter(k=>Array.isArray(k) && k.length > 6) : [];
+  if (raw.length < 20) return;
+  /* 剔末根: REST 最后一根几乎总是进行中(未收盘), 其 ohl 中间值被 bars 收录后会被
+     x 去重逻辑拦住, WS 收盘帧无法覆盖 ⇒ 该根永久污染在中间值 —— 干脆不入, 留给 WS 补。 */
+  raw.pop();
+  const st = pinEnsureState(sym);
+  const bars = raw.map(k=>({ t:+k[0], o:+k[1], h:+k[2], l:+k[3], c:+k[4], v:+k[5] }));
+  /* 合并: 历史K线 + 已积累的实时K线(按时间戳去重——三条数据腿同根只计一次)
+     2026-10-28 修排序 bug: 旧版 concat 后不 sort, 修复场景(REST带来晚于现有根的新根)时间序全乱
+     且被 slice(-KEEP) 挤出 —— 修复路径完全失效。改为合并后统一按 t 排序。 */
+  if (st.bars.length){
+    const have = new Set(st.bars.map(b=>b.t));
+    st.bars = bars.filter(b=>!have.has(b.t)).concat(st.bars).sort((a,b)=>a.t-b.t).slice(-PIN_BARS_KEEP);
+  } else {
+    st.bars = bars.slice(-PIN_BARS_KEEP);
+  }
+  st.atr = calcATR(st.bars);
+  pinReplay(sym, st, bars);   // 用完整120根历史回放
+  fetchTrend(sym);            // 趋势并行加载(完成后自动回填已生成事件的trend字段)
 }
 
 /* ---------- 历史回放: 用收盘K线逐根推进, 找最近2小时插针(复盘用) ---------- */
