@@ -114,7 +114,6 @@
   .item:active { transform:scale(.992); }
 
   /* ===== 📌 插针视图(周期栏标签切换, 渲染进主列表) ===== */
-  .pin-sep { width:1px; height:18px; background:#2a323d; flex:0 0 auto; align-self:center; margin:0 2px; }
   .tab.pin-tab { display:inline-flex; align-items:center; gap:4px; color:#fcd535; border-color:#3a4759; background:rgba(252,213,53,.05); }
   .tab.pin-tab:hover { color:#ffe680; }
   .tab.pin-tab.on { background:#33290f; color:#fcd535; border-color:#fcd535; box-shadow:0 0 8px rgba(252,213,53,.25); }
@@ -126,9 +125,8 @@
   .pin-side { flex:0 0 auto; display:flex; align-items:center; }   /* 右侧大方向箭头区(原空白区) */
   .pin-arrow { width:56px; height:56px; border-radius:14px; display:flex; align-items:center; justify-content:center; flex:0 0 auto; }
   .pin-arrow svg { width:46px; height:46px; display:block; }
-  .pin-arrow.low  { background:rgba(46,189,133,.10); border:1.5px solid rgba(46,189,133,.45); box-shadow:0 0 12px rgba(46,189,133,.25); } .pin-arrow.low  svg path { fill:#2ebd85; }   /* 扫下方=绿·向下(红涨绿跌) */
-  .pin-arrow.high { background:rgba(246,70,93,.10);  border:1.5px solid rgba(246,70,93,.45);  box-shadow:0 0 12px rgba(246,70,93,.25); }  .pin-arrow.high svg path { fill:#f6465d; }  /* 扫上方=红·向上(红涨绿跌) */
-  .pin-arrow.pend { background:rgba(252,213,53,.10); border:1.5px solid rgba(252,213,53,.45); box-shadow:0 0 12px rgba(252,213,53,.25); } .pin-arrow.pend svg path { fill:#fcd535; }
+  .pin-arrow.low  { background:rgba(46,189,133,.10); border:1.5px solid rgba(46,189,133,.45); box-shadow:0 0 12px rgba(46,189,133,.25); } .pin-arrow.low  svg path { fill:#2ebd85; }   /* 扫下方=绿·向下(红涨绿跌, 含进行中) */
+  .pin-arrow.high { background:rgba(246,70,93,.10);  border:1.5px solid rgba(246,70,93,.45);  box-shadow:0 0 12px rgba(246,70,93,.25); }  .pin-arrow.high svg path { fill:#f6465d; }  /* 扫上方=红·向上(红涨绿跌, 含进行中) */
   .pin-arrow.fail { background:rgba(112,122,138,.06); border:1.5px solid rgba(112,122,138,.3); }                     .pin-arrow.fail svg path { fill:#707a8a; }
   .pin-item.strong { border-color:#fcd535; background:linear-gradient(100deg,#33290f 0%,#1c1913 55%,#12161c 100%); animation:pinGlow 1.8s ease-in-out 4; }
   @keyframes pinGlow { 0%,100%{ box-shadow:0 0 8px rgba(252,213,53,.2);} 50%{ box-shadow:0 0 22px rgba(252,213,53,.5);} }
@@ -141,8 +139,11 @@
   .pin-row2 { display:flex; gap:4px 14px; flex-wrap:wrap; font-size:13px; color:#b7c0cc; font-variant-numeric:tabular-nums; }
   .pin-row2 .lb { color:#848e9c; }
   .pin-time { font-size:12px; color:#7d8597; font-variant-numeric:tabular-nums; }
-  /* 🟡进行中 / ⚪失效 状态样式 */
+  /* 🟡进行中 / ⚪失效 状态样式; 超偏≥10% 进行中=刺眼橙红闪烁(⚠️远离插针针尖, 可能在扫大流动性) */
   .pin-item.pending { border-color:#c9a227; background:linear-gradient(100deg,#2b2408 0%,#1d1b0c 55%,#12161c 100%); }
+  .pin-item.pending.hot { border-color:#ff5e2b; background:linear-gradient(100deg,#3a1504 0%,#2b0f06 55%,#12161c 100%); animation:pinHotGlow 1.1s ease-in-out infinite; }
+  @keyframes pinHotGlow { 0%,100%{ box-shadow:0 0 10px rgba(255,94,43,.35);} 50%{ box-shadow:0 0 26px rgba(255,94,43,.85);} }
+  .pin-row2 .hot-dev { color:#ff8a4d; font-weight:800; text-shadow:0 0 8px rgba(255,94,43,.8); font-size:15px; }
   .pin-item.failed  { opacity:.45; border-color:#232a33; }
   .pin-dir.pending  { color:#0b0e11; background:#fcd535; box-shadow:0 0 8px rgba(252,213,53,.4); }   /* 进行中=黄 */
   .pin-dir.failed   { color:#0b0e11; background:#707a8a; }                                      /* 未回归失效=灰 */
@@ -1148,16 +1149,17 @@ function ensureRank(){
    ③ 佐证: 针尖分钟量能 / 前20根均量 (volX) 作置信度加分
    置信分级: 强针 ✨ = 量能≥5× 或 偏离≥5×ATR10(归一)且≥3% (金色高亮)
    SMC 语义: ⬇️扫下方=猎杀多头止损·偏多(红) / ⬆️扫上方=猎杀空头止损·偏空(绿)
-   防抖: 同一窗口极值只报一次 + 同币 15 分钟冷却
-   数据: WS kline_1m 流(订阅24H成交额TOP60 USDT永续, 每5分钟重估)
-         + REST 120根1m历史K线初始化ATR并回放最近2小时插针
+    防抖: 同一窗口极值只报一次 + 同币分方向 15 分钟冷却(上插/下插互不干扰, 同方向防重复)
+    数据: WS kline_1m 流(订阅24H成交额TOP100 USDT永续, 每5分钟重估)
+          + REST 120根1m历史K线初始化ATR并回放最近2小时插针
    ============================================================ */
 const PIN_TOP_N     = 100;        // 订阅币数(按24H成交额)
 const PIN_WINDOW    = 10;         // 滑动窗口: 10 根 1m K线
 const PIN_RETR      = 0.60;       // 回归确认阈值 60%
 const PIN_MIN_DEV   = 0.015;      // 最小偏离保护阈值 1.5%(ATR 极小时防过敏)
 const PIN_MAX_THR   = 0.05;       // 阈值上限 5%(防瀑布根污染ATR致"大波动后盲区")
-const PIN_COOLDOWN  = 15*60*1000; // 同币冷却 15 分钟
+const PIN_COOLDOWN  = 15*60*1000; // 同币分方向冷却 15 分钟(上插/下插各自独立)
+const PIN_HOT_DEV   = 0.10;       // ⚠️进行中偏离≥10% 刺眼橙红闪烁标注(超级插针, 静默但极醒目)
 const PIN_MAX_EVENTS= 80;         // 保留事件条数
 const PIN_ATR_MULT  = 2.5;        // 偏离 = ATR10 × 2.5
 const PIN_STRONG_DEV= 5;          // 强针偏离倍数
@@ -1185,8 +1187,8 @@ let pinStreams = new Set();       // 已订阅流名 "xxxusdt@kline_1m"
 let pinMsgId = 10;                // 增量订阅消息 id(避开 onopen 的 id:1)
 let pinBooted = false;
 let pinEvents = [];               // 插针事件(新→旧渲染, 含回放标记)
-const pinState = new Map();       // symbol -> {bars:[], atr, lastFire, firedLow, firedHigh}
-const pinTrend = new Map();       // symbol -> {series:[{t,dir}], seriesT:[{t,dir}]按事件时刻查, ts:刷新时间}
+const pinState = new Map();       // symbol -> {bars:[], atr, lastFireLow, lastFireHigh, firedLow, firedHigh}
+const pinTrend = new Map();       // symbol -> {series:[{t,dir,deg}], ts:刷新时间}
 
 /* ---------- 趋势引擎: 5m EMA200 单线斜率(角度制), 支持任意历史时刻回溯 ---------- */
 function emaSeries(closes, n){   // 从头到尾的 EMA 序列(SMA seed)
@@ -1258,7 +1260,7 @@ function refreshAllTrends(){   // 分批刷新全部订阅币的 15m 趋势
 function pinEnsureState(sym){
   let st = pinState.get(sym);
   if (!st){
-    st = { bars: [], atr: 0, lastFire: 0, firedLow: 0, firedHigh: 0 };
+    st = { bars: [], atr: 0, lastFireLow: 0, lastFireHigh: 0, firedLow: 0, firedHigh: 0 };
     pinState.set(sym, st);
   }
   return st;
@@ -1319,12 +1321,13 @@ function pinCheck(sym, st, curT, o, h, l, c, v, isReplay){
 
   /* ✅ 确认: 已挂黄卡就地转正(或新建)。返回 false=被冷却/去重拦截, 调用方回退为黄卡刷新 */
   const fire = (side, tip, dev, retr, extremeT, volX)=>{
-    const key = side === "sweep-low" ? "firedLow" : "firedHigh";
-    const pk  = side === "sweep-low" ? "pendingLow" : "pendingHigh";
-    if (st[key] === extremeT) return false;                  // 同一极值只报一次
-    if (nowMs - st.lastFire < PIN_COOLDOWN) return false;    // 同币15分钟冷却
+    const key  = side === "sweep-low" ? "firedLow" : "firedHigh";
+    const pk   = side === "sweep-low" ? "pendingLow" : "pendingHigh";
+    const cdK  = side === "sweep-low" ? "lastFireLow" : "lastFireHigh";   // 分方向冷却: 上插/下插互不干扰
+    if (st[key] === extremeT) return false;                   // 同一极值只报一次
+    if (nowMs - st[cdK] < PIN_COOLDOWN) return false;          // 同方向 15 分钟冷却(另一方向不受影响)
     st[key] = extremeT;
-    st.lastFire = nowMs;
+    st[cdK] = nowMs;
     /* 强针: 量能5倍爆量, 或 偏离≥5×ATR10(归一)且绝对幅度≥3% */
     const strong = volX >= PIN_STRONG_VOL || (dev >= PIN_STRONG_DEV * atrPct && dev >= 0.03);
     const trend = trendDirAt(sym, nowMs);   // 事件时刻的趋势快照(未加载时'na', fetchTrend 完成后回填)
@@ -1358,12 +1361,13 @@ function pinCheck(sym, st, curT, o, h, l, c, v, isReplay){
     return true;
   };
 
-  /* 🟡 进行中: 偏离已达标但未回归60%, 挂黄卡静默刷新(不出声、不角标) */
+  /* 🟡 进行中: 偏离已达标但未回归60%, 挂黄卡静默刷新(不出声、不角标); ≥10% 刺眼标注 */
   const updPend = (side, tip, dev, retr, volX, extremeT)=>{
-    const pk = side === "sweep-low" ? "pendingLow" : "pendingHigh";
-    if (st[pk] && st[pk].status !== "pending") st[pk] = null;   // 兜底: 引用已终态
+    const pk  = side === "sweep-low" ? "pendingLow" : "pendingHigh";
+    const cdK = side === "sweep-low" ? "lastFireLow" : "lastFireHigh";
+    if (st[pk] && st[pk].status !== "pending") st[pk] = null;   // 兑底: 引用已终态
     if (!st[pk]){
-      if (nowMs - st.lastFire < PIN_COOLDOWN) return;         // 冷却期不新开黄卡
+      if (nowMs - st[cdK] < PIN_COOLDOWN) return;         // 同方向冷却期不新开黄卡
       const ev = { ts: nowMs, sym, side, status: "pending", tip, base, dev, retr, volX, strong: false, px: c, replay: !!isReplay, lastUpd: nowMs, trend: trendDirAt(sym, nowMs) };
       pinEvents.push(ev);
       if (pinEvents.length > PIN_MAX_EVENTS + 40) pinEvents = pinEvents.slice(-PIN_MAX_EVENTS);
@@ -1412,7 +1416,7 @@ function pinCheck(sym, st, curT, o, h, l, c, v, isReplay){
   }
 }
 
-/* ---------- 订阅管理: TOP60 按成交额, 每5分钟重估增量增删 ---------- */
+/* ---------- 订阅管理: TOP100 按成交额, 每5分钟重估增量增删 ---------- */
 let pinEvalBusy = false;
 async function pinEvalSubs(){
   if (pinEvalBusy) return;
@@ -1470,18 +1474,18 @@ async function pinInitHistory(sym){
 function pinReplay(sym, st, bars){
   const now = Date.now();
   const CUTOFF = now - 2*60*60*1000;   // 只回放最近2小时
-  let lastFire = 0;
+  let lastFireLow = 0, lastFireHigh = 0;   // 分方向冷却游标(回放中独立推进)
   for (let i = 15; i < bars.length; i++){
     const b = bars[i];
     if (b.t < CUTOFF) continue;
     /* 模拟: 把前 i 根当作已收盘序列, 当前根 b 作为最新K线做一次检测 */
-    const saved = st.bars, savedAtr = st.atr, savedLastFire = st.lastFire;
+    const saved = st.bars, savedAtr = st.atr, savedLfL = st.lastFireLow, savedLfH = st.lastFireHigh;
     st.bars = bars.slice(0, i);
     st.atr = calcATR(st.bars);
-    st.lastFire = lastFire;
+    st.lastFireLow = lastFireLow; st.lastFireHigh = lastFireHigh;
     pinCheck(sym, st, b.t, b.o, b.h, b.l, b.c, b.v, true);
-    lastFire = st.lastFire;   // 确认/新增都会写入 st.lastFire, 无条件跟随(黄卡转正不增数组长度)
-    st.bars = saved; st.atr = savedAtr; st.lastFire = savedLastFire;
+    lastFireLow = st.lastFireLow; lastFireHigh = st.lastFireHigh;   // 确认/黄卡新开都会写入, 无条件跟随
+    st.bars = saved; st.atr = savedAtr; st.lastFireLow = savedLfL; st.lastFireHigh = savedLfH;
   }
   /* 回放结束: 挂着"进行中"超12分钟未更新的历史残留 → 判失效(防旧黄卡长期占顶) */
   pinState.forEach(ss=>{
@@ -1536,7 +1540,10 @@ function renderPinList(){
     const isCross = cross(ev);
     let dirCls, dirTxt, itemCls = "", pxLabel = "触发价 ", arrowCls;
     if (pend){
-      dirCls = "pending";  dirTxt = "插针进行中";   itemCls = " pending"; pxLabel = "现价 "; arrowCls = "pend";
+      /* 进行中: 状态徽章黄, 但大箭头已按方向着色(上插红↑/下插绿↓, 红涨绿跌)
+         偏离≥10% 超级插针 → 刺眼橙红闪烁 */
+      dirCls = "pending";  dirTxt = "插针进行中";   itemCls = " pending"; pxLabel = "现价 "; arrowCls = isLow ? "low" : "high";
+      if (Math.abs(ev.dev) >= PIN_HOT_DEV) itemCls += " hot";
     } else if (fail){
       dirCls = "failed";    dirTxt = "未回归失效";    itemCls = " failed"; arrowCls = "fail";
     } else {
@@ -1575,12 +1582,12 @@ function renderPinList(){
         </div>
         <div class="pin-row2">
           <span><span class="lb">针尖 </span>${fmtPrice(ev.tip)}</span>
-          <span><span class="lb">偏离 </span>${devTxt}${(ev.dev*100).toFixed(1)}%</span>
+          <span><span class="lb">偏离 </span>${(pend && Math.abs(ev.dev) >= PIN_HOT_DEV) ? `<span class="hot-dev">${devTxt}${(ev.dev*100).toFixed(1)}%</span>` : `${devTxt}${(ev.dev*100).toFixed(1)}%`}</span>
           <span><span class="lb">回归 </span>${Math.min(ev.retr*100, 100).toFixed(0)}%</span>
           <span><span class="lb">量能 </span>${volTxt}</span>
           <span><span class="lb">${pxLabel.trim()} </span>${fmtPrice(ev.px)}</span>
         </div>
-        <div class="pin-time">${tsFmt(ev.ts)}${pend ? " · 待回归≥60%" : ""}</div>
+        <div class="pin-time">${tsFmt(ev.ts)}${pend ? " · 待回归≥60%" : ""}${(pend && Math.abs(ev.dev) >= PIN_HOT_DEV) ? " · ⚠️ 超偏≥10%" : ""}</div>
       </div>
       <div class="pin-side">
         <span class="pin-arrow ${arrowCls}"><svg viewBox="0 0 48 48">${isLow ? ARROW_DOWN : ARROW_UP}</svg></span>
