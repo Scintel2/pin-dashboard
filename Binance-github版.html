@@ -142,11 +142,11 @@
   /* 🟡进行中 / ⚪失效 状态样式; 超偏≥10% 进行中=刺眼橙红闪烁(⚠️远离插针针尖, 可能在扫大流动性) */
   .pin-item.pending { border-color:#c9a227; background:linear-gradient(100deg,#2b2408 0%,#1d1b0c 55%,#12161c 100%); animation:pendingGlow 2s ease-in-out infinite; }
   @keyframes pendingGlow { 0%,100%{ box-shadow:0 0 6px rgba(201,162,39,.22);} 50%{ box-shadow:0 0 18px rgba(201,162,39,.6);} }
-  /* 进行中卡片: 右侧大箭头按方向循环跳动(下插向下跳/上插向上跳) */
-  .pin-item.pending .pin-arrow.low svg  { animation:arrowDriftDown 1.2s ease-in-out infinite; }
-  .pin-item.pending .pin-arrow.high svg { animation:arrowDriftUp 1.2s ease-in-out infinite; }
-  @keyframes arrowDriftDown { 0%,100%{ transform:translateY(-3px);} 50%{ transform:translateY(5px);} }
-  @keyframes arrowDriftUp   { 0%,100%{ transform:translateY(5px);} 50%{ transform:translateY(-3px);} }
+  /* 进行中卡片: 右侧大箭头轻柔上下浮动(0%与100%同轨→重建不跳变; 慢周期小幅度→不鬼畜) */
+  .pin-item.pending .pin-arrow.low svg  { animation:arrowDriftSmoothDown 2.4s ease-in-out infinite; }
+  .pin-item.pending .pin-arrow.high svg { animation:arrowDriftSmoothUp 2.4s ease-in-out infinite; }
+  @keyframes arrowDriftSmoothDown { 0%,100%{ transform:translateY(0);} 50%{ transform:translateY(-3px);} }
+  @keyframes arrowDriftSmoothUp   { 0%,100%{ transform:translateY(0);} 50%{ transform:translateY(3px);} }
   .pin-item.pending.hot { border-color:#ff5e2b; background:linear-gradient(100deg,#3a1504 0%,#2b0f06 55%,#12161c 100%); animation:pinHotGlow 1.1s ease-in-out infinite; }
   @keyframes pinHotGlow { 0%,100%{ box-shadow:0 0 10px rgba(255,94,43,.35);} 50%{ box-shadow:0 0 26px rgba(255,94,43,.85);} }
   .pin-row2 .hot-dev { color:#ff8a4d; font-weight:800; text-shadow:0 0 8px rgba(255,94,43,.8); font-size:17px; }
@@ -412,7 +412,7 @@ PERIODS.forEach(([key,label])=>{
   if (key === "all"){
     pinTabEl = makeTab("📌 插针", false, ()=>{
       curView = (curView === "pin") ? "movers" : "pin";
-      if (curView === "pin"){ curRank = null; refreshRankTabsUI(); stopRankTimer(); pinUnread = 0; }
+      if (curView === "pin"){ curRank = null; refreshRankTabsUI(); stopRankTimer(); pinUnread = 0; muteNonPin(); }   // 进入插针视图: 暂停普通/5m大异动铃声
       pinRefreshTab();   // 进出都要同步标签选中态(退出时摘除高亮)
       updateFilterRows();
       render();
@@ -643,11 +643,20 @@ let lastBigTs = 0;                  // 上次 5m 大异动铃声(zzz)播放时�
 const BIG_SUPPRESS_MS = 5000;       // 5m大异动后5秒内抑制普通aa提示, 防"5m大涨大跌时aa也响"重叠
 function playSound(el){
   if (!soundOn || !el) return;
+  /* 插针视图下: 普通/5m大异动铃声(非插针音源)静音暂停, 只放插针音源(ZZ/合成音) */
+  if (curView === "pin" && el !== sndZZ){
+    try{ if (!el.paused) el.pause(); el.currentTime = 0; }catch(_){}
+    return;
+  }
   try{
     el.currentTime = 0;            // 连续触发时从头播
     const p = el.play();            // 首次需用户点"声音开"产生交互后自动播放才被允许
     if (p && p.catch) p.catch(()=>{});
   }catch(_){}
+}
+/* 进入插针视图: 暂停当前正在响的普通/5m大异动铃声(已响到一半的也停掉) */
+function muteNonPin(){
+  try{ [sndNormal, sndBig].forEach(a=>{ if (!a.paused) a.pause(); a.currentTime = 0; }); }catch(_){}
 }
 function playNormal(){
   if (Date.now() - lastBigTs < BIG_SUPPRESS_MS) return;   // 刚播过5m大异动铃声, 5秒内跳过普通aa提示
