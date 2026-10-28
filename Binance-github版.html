@@ -168,13 +168,8 @@
   .pin-verify.win { color:#f6465d; font-weight:600; } .pin-verify.lose { color:#2ebd85; font-weight:600; }
   .pin-tab .pin-cnt.pend { background:#c9a227; }
 
-  /* ===== 无障碍：降低动效 ===== */
-  @media (prefers-reduced-motion: reduce) {
-    *, *::before, *::after {
-      animation-duration:.01ms !important; animation-iteration-count:1 !important;
-      transition-duration:.01ms !important;
-    }
-  }
+  /* 无障碍"降低动效"规则已移除(2026-10-28): 系统报告 prefers-reduced-motion 时会把所有动画压成 0.01ms,
+     箭头浮动/呼吸边框全部静止 —— 与用户要的可动箭头直接冲突, 故删 */
 </style>
 </head>
 <body>
@@ -1709,18 +1704,24 @@ function pinIsCross(ev){
   if (t !== "up" && t !== "down") return false;
   return (t === "up" && ev.side === "sweep-low") || (t === "down" && ev.side === "sweep-high");
 }
+/* 节点复用版(2026-10-28 修"箭头几乎不动"): 旧版每次刷新 list.innerHTML="" 全量重建,
+   实测 ~160ms 重建一次 ⇒ 进行中箭头 CSS 动画每次刚起步就被销毁重来, 永远停在 0% 相位。
+   现按 sym|side|ts 复用卡片骨架: 每次刷新仅更新文本与类名, 不重建 .pin-arrow/卡片节点,
+   也不无脑清空列表 ⇒ 值刷新渲染零 DOM 重建/移动, 进行中箭头浮动动画连续不断。 */
+const pinCardMap = new Map();   // key(sym|side|ts) → 卡片节点
 function renderPinList(){
   const cross = ev=>pinIsCross(ev);
   /* 大号方向箭头(卡片右侧): 下插=红·做多信号 / 上插=绿·做空信号 / 进行中=黄 / 失效=灰 */
   const ARROW_DOWN = '<path d="M17,2 H31 V26 H40 L24,46 L8,26 H17 Z"/>';
   const ARROW_UP   = '<path d="M17,46 H31 V22 H40 L24,2 L8,22 H17 Z"/>';
+  const keyOf = ev => ev.sym + "|" + ev.side + "|" + ev.ts;
   const all = pinEvents.slice().sort((a,b)=>{
     const rk = e=>e.status === "pending" ? 0 : (e.status === "confirmed" && !cross(e) ? 1 : 2);
     const ra = rk(a), rb = rk(b);
     if (ra !== rb) return ra - rb;   // 0进行中置顶 > 1顺势确认 > 2逆势/失效
     return b.ts - a.ts;
   });
-  const evs = all.slice(0, RENDER_LIMIT);   // DOM 仅渲染前40条(与异动卡片一致, 防卡顿)
+  const evs = all.slice(0, RENDER_LIMIT);   // DOM 仅渲染前0条(与异动卡片一致, 防卡顿)
   const nPend = all.filter(e=>e.status === "pending").length;
   const nFail = all.filter(e=>e.status === "failed").length;
   const nCross = all.filter(e=>e.status === "confirmed" && cross(e)).length;
@@ -1730,15 +1731,21 @@ function renderPinList(){
     ? `📌 插针 ${all.length} 条${all.length > RENDER_LIMIT ? `（显示前${RENDER_LIMIT}）` : ""} · 🟡进行中 ${nPend} · ⚪未回归 ${nFail} · ✗逆势 ${nCross}` + ((nWin + nLose) ? ` · 📊30分自证 ${nWin}胜/${nLose}败` : "")
     : (pinStreams.size ? "📌 监测中 · 等待插针事件…" : "📌 监测初始化中…");
   const list = $("list");
-  list.innerHTML = "";
+  /* 空态: 清出全部卡片(保留在 Map 外), 补空态提示 */
   if (!evs.length){
-    const d = document.createElement("div");
-    d.className = "empty";
-    d.textContent = "📌 暂无插针事件 · 1m滑窗监测中";
-    list.appendChild(d);
+    pinCardMap.forEach(el=>el.remove());
+    pinCardMap.clear();
+    if (!list.querySelector(".empty")){
+      const d = document.createElement("div");
+      d.className = "empty";
+      d.textContent = "📌 暂无插针事件 · 1m滑窗监测中";
+      list.appendChild(d);
+    }
     return;
   }
-  const frag = document.createDocumentFragment();
+  list.querySelector(".empty")?.remove();
+
+  const wanted = [];   // 本轮应显示的卡片(有序)
   evs.forEach(ev=>{
     const isLow = ev.side === "sweep-low";
     const pend = ev.status === "pending";
@@ -1778,14 +1785,11 @@ function renderPinList(){
       trendCls = "flat"; trendTxt = `➖ 横盘 ${ti.deg >= 0 ? "+" : "−"}${Math.abs(ti.deg)}°`;
     }
     const strongCls = (ev.strong && !pend && !fail) ? " strong" : "";
-    const d = document.createElement("div");
-    d.className = "pin-item" + itemCls + strongCls;
-    d.title = "点击复制币种名";
     const devTxt = isLow ? "-" : "+";
     const volTxt = ev.volX >= 1 ? ev.volX.toFixed(1) + "×" : "—";
     const icon = (ev.strong && !pend && !fail) ? "📌✨" : "📌";
-    d.innerHTML = `
-      <div class="pin-main">
+    /* 卡片内容(只写 .pin-main 内部, 箭头区 .pin-side 不重建) */
+    const mainHTML = `
         <div class="pin-row1">
           <span class="pin-sym">${icon} ${ev.sym}</span>
           <span class="tag">永续</span>
@@ -1804,19 +1808,48 @@ function renderPinList(){
           <span><span class="lb">${pxLabel.trim()} </span>${fmtPrice(ev.px)}</span>
           ${hl24}
         </div>
-        <div class="pin-time">${tsFmt(ev.ts)}${pend ? " · 待回归≥60%" : ""}${(pend && Math.abs(ev.dev) >= PIN_HOT_DEV) ? " · ⚠️ 超偏≥10%" : ""}${ev.verify ? ` · <span class="pin-verify ${ev.verify}">${ev.verify === "win" ? "✅" : "❌"} 30分钟后 ${ev.verifyPct >= 0 ? "+" : ""}${ev.verifyPct.toFixed(2)}%</span>` : ""}${ev.reentry ? ` · 🎯 ${tsFmt(ev.reentry)} 进入回踩区` : ""}</div>
-      </div>
-      <div class="pin-side">
-        <span class="pin-arrow ${arrowCls}"><svg viewBox="0 0 48 48">${isLow ? ARROW_DOWN : ARROW_UP}</svg></span>
-      </div>`;
-    d.onclick = ()=>copySymbol(ev.sym).then(ok=>{
-      d.style.borderColor = ok ? "#fcd535" : "#f6465d";
-      setTimeout(()=>{ d.style.borderColor = ""; }, 800);
-    });
-    frag.appendChild(d);
+        <div class="pin-time">${tsFmt(ev.ts)}${pend ? " · 待回归≥60%" : ""}${(pend && Math.abs(ev.dev) >= PIN_HOT_DEV) ? " · ⚠️ 超偏≥10%" : ""}${ev.verify ? ` · <span class="pin-verify ${ev.verify}">${ev.verify === "win" ? "✅" : "❌"} 30分钟后 ${ev.verifyPct >= 0 ? "+" : ""}${ev.verifyPct.toFixed(2)}%</span>` : ""}${ev.reentry ? ` · 🎯 ${tsFmt(ev.reentry)} 进入回踩区` : ""}</div>`;
+
+    let d = pinCardMap.get(keyOf(ev));
+    if (!d){
+      /* 首次出现: 一次性建好骨架(卡片 + .pin-main + .pin-side/.pin-arrow) */
+      d = document.createElement("div");
+      d.dataset.sym = ev.sym;
+      d.title = "点击复制币种名";
+      d.onclick = ()=>copySymbol(d.dataset.sym).then(ok=>{
+        d.style.borderColor = ok ? "#fcd535" : "#f6465d";
+        setTimeout(()=>{ d.style.borderColor = ""; }, 800);
+      });
+      const main = document.createElement("div"); main.className = "pin-main";
+      const side = document.createElement("div");  side.className = "pin-side";
+      const arrow = document.createElement("span"); arrow.className = "pin-arrow " + arrowCls;
+      arrow.innerHTML = `<svg viewBox="0 0 48 48">${isLow ? ARROW_DOWN : ARROW_UP}</svg>`;
+      side.appendChild(arrow);
+      d.appendChild(main);
+      d.appendChild(side);
+      d.__main = main; d.__arrow = arrow;
+      pinCardMap.set(keyOf(ev), d);
+    }
+    /* 更新: 仅当有变化才写(值不变 ⇒ 零 DOM 写入; 动画元素全程不重建) */
+    const newCls = "pin-item" + itemCls + strongCls;
+    if (d.className !== newCls) d.className = newCls;
+    const wantArrowCls = "pin-arrow " + arrowCls;
+    if (d.__arrow.className !== wantArrowCls) d.__arrow.className = wantArrowCls;
+    if (d.__lastMain !== mainHTML){ d.__main.innerHTML = mainHTML; d.__lastMain = mainHTML; }
+    if (wanted.indexOf(d) === -1) wanted.push(d);
   });
-  list.appendChild(frag);
+
+  /* 下线的卡片移出 DOM 并出表(超出0条/事件被清理) */
+  pinCardMap.forEach((el, k)=>{
+    if (wanted.indexOf(el) === -1){ el.remove(); pinCardMap.delete(k); }
+  });
+  /* 按当前顺序对齐: 仅错位时移动节点(新卡置顶/状态变化才发生, 值刷新零移动) */
+  wanted.forEach((el, i)=>{
+    const ref = list.children[i];
+    if (ref !== el) list.insertBefore(el, ref || null);
+  });
 }
+
 
 /* ---------- 插针提示音(合成三角波 G4→C5→G4, 与本地铃声/异动提示区分) ---------- */
 let pinAudioCtx = null;
