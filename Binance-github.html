@@ -140,7 +140,8 @@
   .pin-tag { font-size:11px; color:#848e9c; background:#1e242c; border-radius:4px; padding:2px 8px; }
   .pin-row2 { display:flex; gap:4px 16px; flex-wrap:wrap; font-size:15px; color:#b7c0cc; font-variant-numeric:tabular-nums; }
   .pin-row2 .lb { color:#848e9c; }
-  .pin-row2 .px-val { color:#f6465d; font-weight:800; font-size:17px; text-shadow:0 0 8px rgba(246,70,93,.8); }   /* 进行中卡片"现价"后的价格数字刺眼红(#f6465d 全页统一红涨色); 标签两字保持普通灰 */
+  .pin-row2 .px-val { color:#f6465d; font-weight:800; font-size:17px; }   /* 进行中"现价"后价格数字: 纯红无光晕(用户要求去发光) */
+  .pin-row2 .px-tip { color:#f6465d; font-weight:700; }   /* 针尖价格红色(用户要求) */
   .pin-time { font-size:13.5px; color:#7d8597; font-variant-numeric:tabular-nums; }
   /* 🟡进行中 / ⚪失效 状态样式; 超偏≥10% 进行中=刺眼橙红闪烁(⚠️远离插针针尖, 可能在扫大流动性) */
   .pin-item.pending { border-color:#c9a227; background:linear-gradient(100deg,#2b2408 0%,#1d1b0c 55%,#12161c 100%); animation:pendingGlow 2s ease-in-out infinite; }
@@ -2003,7 +2004,7 @@ function renderPinList(){
           ${ev.restored ? '<span class="pin-tag">存档</span>' : (ev.replay ? '<span class="pin-tag">回放</span>' : '')}
         </div>
         <div class="pin-row2">
-          <span><span class="lb">针尖 </span>${fmtPrice(ev.tip)}</span>
+          <span><span class="lb">针尖 </span><span class="px-tip">${fmtPrice(ev.tip)}</span></span>
           <span><span class="lb">偏离 </span>${(pend && Math.abs(ev.dev) >= PIN_HOT_DEV) ? `<span class="hot-dev">${devTxt}${(ev.dev*100).toFixed(1)}%</span>` : `${devTxt}${(ev.dev*100).toFixed(1)}%`}</span>
           <span><span class="lb">回归 </span>${Math.min(ev.retr*100, 100).toFixed(0)}%</span>
           <span><span class="lb">量能 </span>${volTxt}</span>
