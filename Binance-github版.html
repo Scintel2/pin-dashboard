@@ -123,8 +123,8 @@
   .pin-item { background:#12161c; border:1px solid #1e242c; border-radius:12px; padding:12px 16px; display:flex; gap:14px; align-items:center; }
   .pin-main { flex:1 1 auto; min-width:0; display:flex; flex-direction:column; gap:5px; }
   .pin-side { flex:0 0 auto; display:flex; align-items:center; }   /* 右侧大方向箭头区(原空白区) */
-  .pin-arrow { width:56px; height:56px; border-radius:14px; display:flex; align-items:center; justify-content:center; flex:0 0 auto; }
-  .pin-arrow svg { width:46px; height:52px; display:block; }   /* 箭头拉高 */
+  .pin-arrow { width:56px; height:88px; border-radius:14px; display:flex; align-items:center; justify-content:center; flex:0 0 auto; }   /* 容器高88, 容纳80px长箭头 */
+  .pin-arrow svg { width:46px; height:80px; display:block; }   /* 箭头拉长到80px */
   .pin-arrow.low  { background:rgba(46,189,133,.10); border:1.5px solid rgba(46,189,133,.45); box-shadow:0 0 12px rgba(46,189,133,.25); } .pin-arrow.low  svg path { fill:#2ebd85; }   /* 扫下方=绿·向下(红涨绿跌, 含进行中) */
   .pin-arrow.high { background:rgba(246,70,93,.10);  border:1.5px solid rgba(246,70,93,.45);  box-shadow:0 0 12px rgba(246,70,93,.25); }  .pin-arrow.high svg path { fill:#f6465d; }  /* 扫上方=红·向上(红涨绿跌, 含进行中) */
   .pin-arrow.fail { background:rgba(112,122,138,.06); border:1.5px solid rgba(112,122,138,.3); }                     .pin-arrow.fail svg path { fill:#707a8a; }
