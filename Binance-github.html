@@ -775,7 +775,10 @@ $("feishuBtn").ondblclick = ()=>{
     markPush(false, "未配置 webhook");
     return;
   }
-  sendFeishu([{symbol: "测试推送", priceChange: 0.05, openTime: Date.now(), createTimestamp: Date.now(), period: "5m", eventType: "UP_2", noticeType: "PRICE_CHANGE"}]);
+  /* ★v5 P2: show.forEach 同步构建段在 try 外——未来边界(如 fmtPrice 改造)可能抛 → unhandled rejection 静默;
+     此处与 ingestAll 的 sendFeishu 调用对齐, 顶层 catch + markPush(false) 保 footer 状态可见 */
+  sendFeishu([{symbol: "测试推送", priceChange: 0.05, openTime: Date.now(), createTimestamp: Date.now(), period: "5m", eventType: "UP_2", noticeType: "PRICE_CHANGE"}])
+    .catch(e=>{ markPush(false); console.warn("[飞书] 测试推送异常", e); });
 };
 /* 推送状态显示(footer)：用户可直观看到推送是否工作 */
 function markPush(ok, reason){
@@ -1592,7 +1595,12 @@ function loadPinEvents(){   // 恢复当天: 旧黄卡超时转灰, 全部标回
     const now = Date.now(), seenKey = new Set();
     pinEvents = arr.filter(e=>e && e.ts && now - e.ts < PIN_STORE_DAY)
       .map(e=>{
-        if (e.status === "pending" && now - (e.lastUpd || e.ts) > 12*60*1000) e.status = "failed";
+        /* ★v5 P1(2026-10-29): 恢复的 pending 一律判灰——st(内存)已重建, 没有 pendingLow/High 引用指向它,
+           12min 超时清扫扫的是 st[pkk], 永远扫不到 → 永久僵尸黄卡（旧卡不消失, 该币再插针又挂新卡 → 堆积）。语义:
+           刷新即断跟踪, 无从判断"是否已回归 60%" → 按"未回归失效"落灰(历史可查);
+           若市场真还在插针中, pinReplay 会在同根上重造 pending Q(带 replay), Q 才是活的跟踪对象。
+           原 12min 超时判灰规则在新卡出生后由 pinCheck 末尾清扫覆盖, 此处无条件判灰不再需要时间窗。 */
+        if (e.status === "pending") e.status = "failed";
         e.replay = true; e.restored = true;   // 恢复的事件不再触发提示/角标/飞书
         delete e._fetching;                   // 清残留防 calcSLTP 死锁
         return e;
@@ -1630,9 +1638,23 @@ function pinDedupEvents(){
     if (pa !== pb) return pa - pb;
     return b.ts - a.ts;
   });
+  /* ★v5 P2 守卫: 保挂卡——被 st.pendingLow/High 引用的 pending 活卡不许被重复项顶掉(与 trimPinEvents keepPending 同款)。
+     P1 判灰的 P(restored=2) 会先入 kept; pinReplay 重造的 Q(replay=3, pending, st 挂它)后到时去重命中——
+     旧版丢 Q → Q 成孤儿(st 指着它但不在数组), updPend 刷隐形卡、12min 清扫只灰隐形卡, 该币进行中黄卡整窗缺席。
+     顶替语义: 活卡遇到重复项时替换掉已入 kept 的老记录——同一根针的状态从 failed 演进到 pending;
+     顶替而非"两条都留"——同币同向同 ts 一张 failed 一张 pending 会让同根针渲染两卡, 用户视角"一根针两条记录"。 */
+  const pinned = new Set();
+  pinState.forEach(ss=>{
+    if (ss.pendingLow  && ss.pendingLow.status  === "pending") pinned.add(ss.pendingLow);
+    if (ss.pendingHigh && ss.pendingHigh.status === "pending") pinned.add(ss.pendingHigh);
+  });
   const kept = [];
   sorted.forEach(ev=>{
-    if (kept.some(x=>x.sym === ev.sym && x.side === ev.side && Math.abs(x.ts - ev.ts) < PIN_COOLDOWN)) return;
+    const idxDup = kept.findIndex(x=>x.sym === ev.sym && x.side === ev.side && Math.abs(x.ts - ev.ts) < PIN_COOLDOWN);
+    if (idxDup >= 0){
+      if (pinned.has(ev)) kept.splice(idxDup, 1);   // 活卡顶替重复项(P1 判灰的 P 在此退位)
+      else return;                                   // 非活卡重复: 丢弃(原逻辑)
+    }
     kept.push(ev);
   });
   if (kept.length !== pinEvents.length){ pinEvents = kept; savePinEvents(); }
@@ -2111,6 +2133,8 @@ function pinBoot(){
   if (pinBooted) return;
   pinBooted = true;
   loadPinEvents();                        // ★ 恢复当天事件(刷新不丢, 旧黄卡自动转灰)
+  pinRefreshTab();                        /* ★v5 P3(2026-10-29): 恢复后立即同步 tab 角标; 上 P1 后刷新瞬间 pendN=0、pinUnread=0,
+                                             本次渲染结果与默认态一致(肉眼零差异), 但属语义对齐——防将来有改动漏同步 */
   pinEvalSubs();
   setInterval(pinEvalSubs, 5*60*1000);    // 每5分钟按成交额重估订阅
   setInterval(refreshAllTrends, PIN_TREND_REFR);   // 每5分钟重估全部币的 5m 趋势
