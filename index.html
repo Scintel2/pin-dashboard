@@ -1160,14 +1160,19 @@ const PIN_STRONG_DEV= 5;          // 强针偏离倍数
 const PIN_STRONG_VOL= 5;          // 强针量能倍数
 const PIN_BARS_KEEP = 40;         // 每币保留已收盘K线根数(ATR计算+窗口)
 const PIN_REST      = "https://www.icnguxncf.com/fapi/v1/klines";
-/* 趋势过滤(5m EMA21 vs EMA55): 比旧 15m 更贴近当天盘面, 人工盯盘节奏；
+/* 趋势过滤(5m EMA200 单线斜率·角度制): 阶梯式响应盘面, 震荡下坡不再被 EMA 交叉反复翻面;
+   角度 θ = atan(Δ% × K), Δ% = EMA200 近60根(5小时)净位移, K=0.36;
+   定标(实测): 20°=1.0%/5h(≈5%/天, 温和爬坡/阴跌达线=趋势) 45°=2.8%/5h(≈13%/天, 单边大行情=强);
+   BTC/ETH 平常日约7°判横盘, 瀑布/拉升均>60°;
    逆势=插针方向与趋势相反: 趋势多+向下插(扫下方)/趋势空+向上插(扫上方) 淡化置底;
    顺势=插针方向与趋势同向: 趋势多+向上插(扫上方)/趋势空+向下插(扫下方) 保留 */
 const PIN_TREND_BAR   = "5m";        // 趋势周期 5 分钟图(人工盯盘节奏)
-const PIN_TREND_FAST  = 21;          // 快 EMA
-const PIN_TREND_SLOW  = 55;          // 慢 EMA
-const PIN_TREND_KEEP  = 300;         // 拉取 5m 根数(=25小时, 含足够回溯)
-const PIN_TREND_FLAT  = 0.003;       // EMA 差<±0.3% 判横盘(15m时用0.15%; 5m EMA差天然放大, 等比例放宽否则几乎全横盘)
+const PIN_TREND_EMA   = 200;         // 单线 EMA200(平滑基准, 斜率=净位移)
+const PIN_TREND_LOOK  = 60;          // 斜率回看窗口 60 根(=5小时)
+const PIN_TREND_KEEP  = 500;         // 拉取 5m 根数(=EMA200预热200+有效300根, ≈42小时)
+const PIN_TREND_K     = 0.36;        // 角度映射系数: 20°=Δ1%/5h, 45°=Δ2.78%/5h
+const PIN_TREND_MIN   = 20;          // ≥20° 才算趋势, 否则横盘
+const PIN_TREND_STRONG= 45;          // ≥45° 标"强"(单边大行情)
 const PIN_TREND_REFR  = 5*60*1000;   // 趋势重估周期 5 分钟(跟随5m收盘节奏)
 /* 人工盯盘: 不剔股票/ETF/商品代币, 只剔 CSOP 杜杆代币与交割合约(RANK_RE已处理) */
 const PIN_BLOCK_RE = /__NEVER_MATCH__*/;
@@ -1179,7 +1184,7 @@ let pinEvents = [];               // 插针事件(新→旧渲染, 含回放标�
 const pinState = new Map();       // symbol -> {bars:[], atr, lastFire, firedLow, firedHigh}
 const pinTrend = new Map();       // symbol -> {series:[{t,dir}], seriesT:[{t,dir}]按事件时刻查, ts:刷新时间}
 
-/* ---------- 趋势引擎: 15m EMA21/55, 支持任意历史时刻回溯 ---------- */
+/* ---------- 趋势引擎: 5m EMA200 单线斜率(角度制), 支持任意历史时刻回溯 ---------- */
 function emaSeries(closes, n){   // 从头到尾的 EMA 序列(SMA seed)
   const k = 2/(n+1), out = [];
   if (closes.length < n) return out;
@@ -1193,17 +1198,18 @@ function emaSeries(closes, n){   // 从头到尾的 EMA 序列(SMA seed)
   }
   return out;
 }
-function trendDirAt(sym, ts){
+/* 任意历史时刻查 {dir, deg}; series 元素 {t, dir, deg} */
+function trendAt(sym, ts){
   const tr = pinTrend.get(sym);
-  if (!tr || !tr.series || !tr.series.length) return "na";   // 未加载
-  /* 二分: 找 ≤ts 的最后一个点(15m bar 确认时刻 = 开盘+15m, 未收盘 bar 不算) */
+  if (!tr || !tr.series || !tr.series.length) return {dir:"na", deg:0};
   let lo = 0, hi = tr.series.length - 1, ans = -1;
   while (lo <= hi){
     const m = (lo + hi) >> 1;
     if (tr.series[m].t <= ts){ ans = m; lo = m + 1; } else hi = m - 1;
   }
-  return ans >= 0 ? tr.series[ans].dir : "na";
+  return ans >= 0 ? tr.series[ans] : {dir:"na", deg:0};
 }
+function trendDirAt(sym, ts){ return trendAt(sym, ts).dir; }
 async function fetchTrend(sym){
   try{
     const ctl = new AbortController();
@@ -1211,22 +1217,24 @@ async function fetchTrend(sym){
     const r = await fetch(`${PIN_REST}?symbol=${encodeURIComponent(sym)}&interval=${PIN_TREND_BAR}&limit=${PIN_TREND_KEEP}`, {cache:"no-store", signal:ctl.signal});
     clearTimeout(timer);
     const arr = await r.json();
-    if (!Array.isArray(arr) || arr.length < PIN_TREND_SLOW + 10) return;
+    if (!Array.isArray(arr) || arr.length < PIN_TREND_EMA + PIN_TREND_LOOK + 10) return;
     const closes = arr.map(k=>+k[4]);
-    const e21 = emaSeries(closes, PIN_TREND_FAST);
-    const e55 = emaSeries(closes, PIN_TREND_SLOW);
-    if (!e21.length || !e55.length) return;
-    /* 对齐: e21[k]↔bar(20+k), e55[m]↔bar(54+m) — 同一根 bar 才能比(修复旧版 i/i 错位34根) */
-    const n = closes.length;
+    const e200 = emaSeries(closes, PIN_TREND_EMA);
+    if (e200.length <= PIN_TREND_LOOK) return;
+    /* 每根已收盘 5m bar: θ = atan(近60根 EMA200 净位移% × K)·换算成度 */
+    const n = arr.length;
     const series = [];
-    for (let j = PIN_TREND_SLOW - 1; j < n; j++){   // j = arr 中的 bar 下标
-      const i21 = j - (PIN_TREND_FAST - 1), i55 = j - (PIN_TREND_SLOW - 1);   // e21[k]↔bar(FAST-1+k) 同下标错位修复
-      if (i21 < 0 || i55 < 0) continue;
-      const a = e21[i21], b = e55[i55];
+    for (let j = PIN_TREND_EMA - 1 + PIN_TREND_LOOK; j < n; j++){   // EMA seed 后再回看60根才有完整斜率
+      const iNow = j - (PIN_TREND_EMA - 1);        // e200[i]↔bar(EMA-1+i)
+      const iRef = iNow - PIN_TREND_LOOK;
+      if (iRef < 0) continue;
+      const a = e200[iNow], b = e200[iRef];
       if (!(b > 0)) continue;
-      const t = +arr[j][0] + 5*60*1000;   // 5m bar 确认时刻(开盘+5m)
-      const d = (a - b) / b;
-      series.push({ t, dir: d > PIN_TREND_FLAT ? "up" : (d < -PIN_TREND_FLAT ? "down" : "flat") });
+      const t = +arr[j][0] + 5*60*1000;           // 5m bar 确认时刻(开盘+5m)
+      const d = (a - b) / b * 100;                 // Δ%(近60根=5小时)
+      const deg = Math.atan(d * PIN_TREND_K) * 180 / Math.PI;
+      const dir = deg >= PIN_TREND_MIN ? "up" : (deg <= -PIN_TREND_MIN ? "down" : "flat");
+      series.push({ t, dir, deg: Math.round(deg) });
     }
     pinTrend.set(sym, { series, ts: Date.now() });
     /* 回填: 趋势加载前发生的事件(含回放批)补上事件时刻的趋势 */
@@ -1533,11 +1541,17 @@ function renderPinList(){
       arrowCls = isLow ? "low" : "high";
       if (isCross) itemCls = " cross";   // 逆势: 淡化置底(不响铃不角标, 供回头验证)
     }
-    /* 趋势标签(红涨绿跌, 与大盘配色一致) */
+    /* 趋势标签(红涨绿跌): 角度制显示, ≥45° 标"强" */
+    const ti = trendAt(ev.sym, ev.ts);
     let trendCls = "na", trendTxt = "⏳ 趋势加载";
-    if (ev.trend === "up"){ trendCls = "up"; trendTxt = "📈 趋势多"; }
-    else if (ev.trend === "down"){ trendCls = "down"; trendTxt = "📉 趋势空"; }
-    else if (ev.trend === "flat"){ trendCls = "flat"; trendTxt = "➖ 横盘"; }
+    if (ti.dir === "up" || ti.dir === "down"){
+      const sgn = ti.deg >= 0 ? "+" : "−";
+      const strong = Math.abs(ti.deg) >= PIN_TREND_STRONG;
+      if (ti.dir === "up"){ trendCls = "up";   trendTxt = `📈 ${strong ? "强多" : "趋势多"} ${sgn}${Math.abs(ti.deg)}°`; }
+      else                 { trendCls = "down"; trendTxt = `📉 ${strong ? "强空" : "趋势空"} ${sgn}${Math.abs(ti.deg)}°`; }
+    } else if (ti.dir === "flat"){
+      trendCls = "flat"; trendTxt = `➖ 横盘 ${ti.deg >= 0 ? "+" : "−"}${Math.abs(ti.deg)}°`;
+    }
     const strongCls = (ev.strong && !pend && !fail) ? " strong" : "";
     const d = document.createElement("div");
     d.className = "pin-item" + itemCls + strongCls;
