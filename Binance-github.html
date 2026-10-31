@@ -169,8 +169,8 @@
   .pin-row1 { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
   .pin-sym { font-size:17px; font-weight:700; letter-spacing:.3px; }
   .pin-dir { font-size:12px; font-weight:700; padding:2px 8px; border-radius:6px; flex:0 0 auto; }
-  .pin-dir.sweep-low  { color:#fff; background:#f6465d; box-shadow:0 0 8px rgba(246,70,93,.45); }   /* 扫下方=猎杀多头止损·偏多=红 */
-  .pin-dir.sweep-high { color:#fff; background:#2ebd85; box-shadow:0 0 8px rgba(46,189,133,.45); }  /* 扫上方=猎杀空头止损·偏空=绿 */
+  .pin-dir.sweep-low  { color:#fff; background:#f6465d; box-shadow:0 0 8px rgba(246,70,93,.45); }   /* 扫下方=猎杀多头止损·偏多=红(2026-11-01 误改已回滚) */
+  .pin-dir.sweep-high { color:#fff; background:#2ebd85; box-shadow:0 0 8px rgba(46,189,133,.45); }  /* 扫上方=猎杀空头止损·偏空=绿(2026-11-01 误改已回滚) */
   .pin-tag { font-size:11px; color:#848e9c; background:#1e242c; border-radius:4px; padding:2px 8px; }
   .pin-row2 { display:flex; gap:4px 16px; flex-wrap:wrap; font-size:15px; color:#b7c0cc; font-variant-numeric:tabular-nums; }
   .pin-row2 .lb { color:#848e9c; }
@@ -1042,6 +1042,20 @@ $("testSnd").ondblclick = ()=>{
 
 /* ---------- 飞书推送(5M大异动) ---------- */
 $("feishuBtn").onclick = ()=>{
+  /* ★hook配置入口(2026-11-01 老登"从来没收到过提醒"根因修复): 页面按安全设计不内置 hook 值(防 git 泄露), 须 localStorage 注入——
+     旧版要 F12 敲命令, 老登从来配过 → _whConfigured 恒 false → 飞书按钮灰转全程空转。现在: 未配置时点击=弹输入框粘贴一次永久生效,
+     值零字面量零 git 足迹(安全红线不动)。已配置用户点击=原开关行为不受影响 */
+  if (!_whConfigured){
+    const v = (window.prompt("[飞书] 粘贴群机器人 webhook 地址\n形如 https://open.feishu.cn/open-apis/bot/v2/hook/xxxx（取自 飞书群→设置→群机器人→添加→复制 Webhook 地址）", "") || "").trim();
+    if (/^https:\/\/open\.feishu\.cn\/open-apis\/bot\/v2\/hook\/[0-9a-f-]{20,}$/.test(v)){
+      try{ localStorage.setItem("feishu_webhook", v); }catch(_){}
+      location.href = location.origin + location.pathname + "?v=" + Date.now();   /* reload 重读 FEISHU_WEBHOOK 生效 */
+    } else if (v){
+      console.warn("[飞书] webhook 格式不对");
+      markPush(false, "webhook 格式不对（需 https://open.feishu.cn/open-apis/bot/v2/hook/ 开头的完整地址）");
+    }
+    return;   /* 未配置前不切开关(灰转无意义), 配好刷新后此 handler 变回纯开关 */
+  }
   feishuOn = !feishuOn;
   $("feishuBtn").classList.toggle("on", feishuOn);   /* 纯图标: 开=彩色, 关=灰 */
 };
@@ -1275,7 +1289,7 @@ function sendPinCard(ev){   /* ★r25(审查8-中5·行为澄清): trend=na(未�
   if (!feishuOn || !ev || !ev.strong || ev.replay || pinIsCross(ev)) return;
   const isLow = ev.side === "sweep-low";
   const icon = isLow ? "⬇️" : "⬆️";
-  const col  = isLow ? "red" : "green";   // 红涨绿跌: 扫下方=偏多=红 / 扫上方=偏空=绿
+  const col  = isLow ? "red" : "green";   // 红涨绿跌: 扫下方=偏多=红 / 扫上方=偏空=绿(2026-11-01 误改已回滚)
   const ti = trendAt(ev.sym, ev.ts);
   let trendTxt = "⏳ 趋势加载";
   if (ti.dir === "up" || ti.dir === "down"){
@@ -2752,7 +2766,7 @@ function renderPinList(){
     let dirCls, dirTxt, itemCls = "", pxLabel = "触发价 ";   /* ★r22: arrowCls 退役(方向颜色由蜡烛自带: 涨红跌绿) */
     if (pend){
       /* 进行中: 状态徽章黄; 偏离≥10% 超级插针 → hot 档刺眼橙红闪烁 */
-      dirCls = "pending";  dirTxt = isLow ? "向下插针中" : "向上插针中";   itemCls = " pending"; pxLabel = "现价 ";
+      dirCls = "pending";  dirTxt = isLow ? "向下插针中" : "向上插针中";   itemCls = " pending"; pxLabel = "现价 ";   /* 徽章还原统一黄(2026-11-01 老登指示回滚) */
       /* 摆动分级: 摆幅/周期随偏离缩放(≥10% 大幅急摆+hot 橙红闪, 5%~10% 中幅, <5% 小幅慢摆) */
       const ad = Math.abs(ev.dev);
       if (ad >= PIN_HOT_DEV) itemCls += " hot d3";
