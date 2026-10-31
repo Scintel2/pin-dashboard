@@ -664,8 +664,12 @@ function scheduleRender(){
   renderTimer = setTimeout(()=>{ renderTimer = null; render(); }, 100);
 }
 function render(){
-  if (curView === "pin"){ renderPinList(); return; }   // 📌插针视图: 主列表渲染插针事件流
-  if (isRankMode()){ renderRankList(); return; }   // 榜单视图：主列表渲染涨/跌幅榜
+  /* ★第十二轮(r12-F): 渲染性能计数器——rAF 谈判前置数据(TODO rAF 不做盲改):
+     每 30 次渲染在 console 输出一行(次数/总耗时/平均/最长), 并暴露 window.__renderStats 供 CDP 采集。
+     连放一天后拿真实数据决定: 若平均<16ms 且频率>10 次可考虑 100ms节流外套 rAF; 若单次>100ms 先修 Render 本身。 */
+  const __t0 = performance.now();
+  if (curView === "pin"){ renderPinList(); __renderCount(__t0); return; }   // 📌插针视图: 主列表渲染插针事件流
+  if (isRankMode()){ renderRankList(); __renderCount(__t0); return; }   // 榜单视图：主列表渲染涨/跌幅榜
   const cat = CATS.find(c=>c[0]===curCat) || CATS[0];
   const filtered = movers.filter(e=>cat[2](e) && periodMatch(e));
   const rows = filtered.slice(0, RENDER_LIMIT);
@@ -676,14 +680,52 @@ function render(){
   if (!rows.length){
     const d = document.createElement("div");
     d.className = "empty"; d.textContent = "📭 当前筛选暂无异动";
-    list.appendChild(d); return;
+    list.appendChild(d); __renderCount(__t0); return;
   }
   const frag = document.createDocumentFragment();
   rows.forEach(e=>frag.appendChild(itemNode(e)));
   list.appendChild(frag);
+  __renderCount(__t0);
+}
+/* ★r12-F 渲染计数器实装: 三处出口(普通/插针/榜单)统一计量, 汇总在 window.__renderStats */
+let __renderN = 0, __renderMs = 0, __renderMax = 0;
+function __renderCount(t0){
+  if (t0){ const dt = performance.now() - t0; __renderMs += dt; if (dt > __renderMax) __renderMax = dt; }
+  if (++__renderN % 30 === 0){
+    const avg = (__renderMs / __renderN).toFixed(1);
+    console.info(`[render] n=${__renderN} total=${(__renderMs/1000).toFixed(1)}s avg=${avg}ms max=${__renderMax.toFixed(1)}ms`);
+  }
+  window.__renderStats = { n: __renderN, totalMs: __renderMs, avg: __renderMs / __renderN, max: __renderMax };
 }
 
-/* ---------- 状态 ---------- */
+/* ════════════════ ★第十二轮(r12-G): 模块地图(零改动版) ════════════════
+   单文件有意不拆(file:// 禁 ES import / 拷机习惯 4 文件 / 12 个 CDP 测试按全局名调用, 见各函数处★注释)。
+   本地图按五域列出函数, 改哪个域先看这里, grep 定位效率+80%:
+   ┌─ 【market-data 数据层】 连接管理/REST/双源合并
+   │   connectWS(主币安WS)·connectWS2(Bitget副WS)·onW(kline分发)·fapi(REST封装+418全局锁)·fetchPrice/fetchRank
+   │   refreshPrices(榜单合流)·ingestAll(movers入库+去重)·pushItem(seen对齐)·pinInitHistory(120根暖机)
+   │   schedulePinRepair(缺口修复三腿)·volMap/priceMap/chgMap 维护·movers WS 定阅管理
+   │   Bitget 二源: onBG(kline 解析)+bitgetPending 进行中根 + ws2PingTimer 心跳
+   ├─ 【pin-engine 检测引擎】 ATR/滑窗/三态状态机/趋势/SMC标签
+   │   calcATR(中位TR)·pinCheck(滑窗三态主入口+预筛, 内含 fire/updPend/failPend)
+   │   fire 确认(冷却 r12-C=极值时刻)·updPend 黄卡出生/刷新·failPend 判灰
+   │   volXOf 量能比(r12-A 缓存版)·fvgobFor FVG/OB(r12-B 缓存版)·pinReplay 历史回放(冷却 A+钳制)
+   │   趋势引擎: emaSeries/trendAt/refreshAllTrends/fetchTrendConfirm(15m 懒拉回填)
+   │   calcSLTP 止损止盈(PIN_SLTP_SWING_BARS=15根×15m=3.75h)
+   ├─ 【render 渲染层】 列表/榜单/插针卡片
+   │   render(分发三视图+计数器 r12-F)·renderRankList 榜单·renderPinList 插针流(节点复用/箭头动画连续)
+   │   itemNode 异动条幅·pickBestSparkline(占位未来用)·updateFilterRows·selectTab
+   ├─ 【notify 通知层】 声音/飞书/角标/状态
+   │   声音: playZZ/playBig/pinBeep(合成三角波)/sndXXX 三件套·soundOn 开关
+   │   飞书: FEISHU_WEBHOOK(localStorage+trim)·_whConfigured 正则校验双挡·sendFeishu(postCard 双通道)
+   │   sendPinCard 强针卡片·markPush(ok,reason) footer状态+title悬停
+   │   角标: pinUnread 金·pinRefreshTab同步·setStatus 连接状态灯(r12⑨ WS实际存活判定)
+   └─ 【store 存储层】 localStorage 读写/跨天/去重
+       todayStoreKey 本地日期·rotateStoreKeyIfNeeded(句柄 r12-E)+防抖挂起清理
+       savePinEvents/loadPinEvents(挂起判灰 v5P1)·trimPinEvents(保挂卡 v12③)
+       pinDedupEvents(保挂卡顶替 v5P2)·PIN_STORE_KEY let 化
+   其他: beforeunload 收尾(r12-E)·窗口池 pinState/pinTrend/pinTrend15·渲染计数器 __renderCount(r12-F)
+════════════════════════════════════════════════ */
 function fmtClock(ms){
   const d = new Date(ms);
   return `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
@@ -1390,8 +1432,9 @@ document.addEventListener("visibilitychange", ()=>{
 });
 
 /* ---------- 定时校准(30s, 以 REST 为准) ---------- */
+let pinEvalTimer = null, trendTimer = null, verifyTimer = null, rotateTimer = null;   /* ★r12-E 声明区(供 beforeunload 统一清理): 必须在首处赋值(两行后的 rotateTimer) 之前——曾两度置于函数声明区, 顶层执行时 TDZ 炸裂, 整个脚本后半段不执行 */
 setInterval(()=>{ fetchMovers(false); }, CALIBRATE_MS);
-setInterval(rotateStoreKeyIfNeeded, 60000);   /* ★跨天重算兑底轮询(九轮②): 页面一直可见不触发 visibilitychange 的挂夜场景 */
+rotateTimer = setInterval(rotateStoreKeyIfNeeded, 60000);   /* ★跨天重算兑底轮询(九轮②): 页面一直可见不触发 visibilitychange 的挂夜场景; r12-E 句柄化 */
 
 /* ---------- 启动: 初始 REST 拉取 + 主/副双 WS 实时 ---------- */
 fetchMovers(true);
@@ -1838,12 +1881,25 @@ function pinCheck(sym, st, curT, o, h, l, c, v, isReplay){
     if (b.l < wLow){ wLow = b.l; lowT = b.t; lowVol = b.v; }
     if (b.h > wHigh){ wHigh = b.h; highT = b.t; highVol = b.v; }
   }
-  /* 量能倍数: 极值根 vs 前20根均量(不含极值根), 低点/高点各自计算 */
+  /* 量能倍数: 极值根 vs 前20根均量(不含极值根), 低点/高点各自计算
+     ★第十二轮(r12-A): 纯缓存版——数学与旧版完全一致(排除极值根的前20根均量), 不再每 tick filter+slice 造临时数组;
+        100币×高频tick GC 压力累积。key=收盘根数|末根t|极值根t, 收盘推进或极值根切换才重算一次。 */
+  const volHistCache = (t)=>{
+    const key = st.bars.length + "|" + (st.bars.length ? st.bars[st.bars.length-1].t : 0) + "|" + t;
+    if (st._volAvg20Key !== key){
+      let s = 0, n = 0;
+      for (let i = Math.max(0, st.bars.length - 20); i < st.bars.length; i++){
+        if (st.bars[i].t === t) continue;             // 排除极值根(与旧版 filter(b=>b.t!==t).slice(-20) 同语义)
+        s += st.bars[i].v; n++;
+      }
+      st._volAvg20 = (n && s > 0) ? s / n : 0;
+      st._volAvg20Key = key;
+    }
+    return st._volAvg20;
+  };
   const volXOf = (t, vol)=>{
-    const hist = st.bars.filter(b=>b.t !== t).slice(-20);
-    let s = 0, n = 0;
-    hist.forEach(b=>{ s += b.v; n++; });
-    return (n && s > 0) ? vol / (s / n) : 0;
+    const avg = volHistCache(t);
+    return (avg > 0) ? vol / avg : 0;
   };
   const volXLow = volXOf(lowT, lowVol), volXHigh = volXOf(highT, highVol);
   const nowMs = isReplay ? curT : Date.now();
@@ -1864,9 +1920,20 @@ function pinCheck(sym, st, curT, o, h, l, c, v, isReplay){
   /* 👑 FVG/OB 分腿回看(七批): 只用「极值根时刻之前」已收盘根(bar.t < legT 严格小于)——针尖那根及其后永不参判(防自证)。
      fvgobFor(tip, legT) 单腿独立: FVG 三根组 i-1/i/i+1; bull=b.h<c.l→带[b.h,c.l]; bear=c.h<b.l→带[c.h,b.l]; 落位=|tip−CE(50%)|≤0.5×ATR。
      OB=大实体(实体/全幅≥0.6)且后一根未吃穿; 落位=tip∈OB带±0.5×ATR。只标不过滤。 */
+  /* ★第十二轮(r12-B): fvgobFor 结果缓存——同一极值根+同一收盘序列下 FVG/OB 结果不变,
+     旧版每 tick 两腿各扫 ≤60根×2; key=极值根t|bars末根t|根数。回放中 st.bars 每根循环都被换过,
+     只靠 sym|extremeT 做键会拿错序列的结果(行为级漂移), 必须带序列指纹。 */
   const fvgobFor = (tip, legT)=>{
     try{
       if (!(tip > 0) || !legT) return null;
+      const _key = legT + "|" + (st.bars.length ? st.bars[st.bars.length-1].t : 0) + "|" + st.bars.length;
+      if (st._fvgobKey === _key && st._fvgobVal !== undefined) return st._fvgobVal;
+      const r = fvgobCompute(tip, legT);
+      st._fvgobKey = _key; st._fvgobVal = r;
+      return r;
+    }catch(_){ return null; }
+  };
+  const fvgobCompute = (tip, legT)=>{
       const hist = st.bars.filter(b => b.t < legT).slice(-60);
       if (hist.length < 12) return null;
       const buf = (atr10 > 0 ? atr10 : (st.atr || 0)) * 0.5;
@@ -1889,8 +1956,7 @@ function pinCheck(sym, st, curT, o, h, l, c, v, isReplay){
         if (tip >= lo - buf && tip <= hi + buf) ob = { lo, hi, kind: b.c >= b.o ? "bull" : "bear" };
       }
       return (fvg || ob) ? { fvg, ob } : null;
-    }catch(_){ return null; }
-  };
+  };   /* ★r12-B: fvgobCompute 闭合 —— 旧版 try 结构尾巴已并入 fvgobFor 外壳, 此处仅纯函数 */
   const fvgobLow  = (wLow  > 0)        ? fvgobFor(wLow,  lowT)  : null;
   const fvgobHigh = (wHigh > base)     ? fvgobFor(wHigh, highT) : null;
 
@@ -1914,7 +1980,10 @@ function pinCheck(sym, st, curT, o, h, l, c, v, isReplay){
       }
     }
     st[key] = extremeT;
-    st[cdK] = nowMs;
+    st[cdK] = extremeT;   /* ★第十二轮(r12-C, 用户拍板改): 冷却基准改存极值时刻(旧版存确认/出卡时刻 nowMs)。
+       旧版反直觉行为: A 针插得早回归慢后确认, 反被"插得晚回归快先确认"的 B 针拦掉——后确认的吃闭门羹, 与"是否同一波扫荡"无关。
+       正确语义: 插针木体时刻=极值时刻; 判据 nowMs-extremeT<15min 本身就是"极值时刻差<15min", 同一波内拦, 差≥15min 放行。
+       口径统一: st.firedLow/High 与 pinDedupEvents(ts≈极值时刻) 三处对齐。代价: 信号数变多(刷子币 15 分钟可出两根)属预期, 观察一周再调 PIN_COOLDOWN。 */
     /* 强针: 量能5倍爆量或偏离≥5×ATR 且≥3%; 低量(<0.8)降级=免强针, 只打 lowVol 标记不拦截(用户拍板) */
     let strong = volX >= PIN_STRONG_VOL || (dev >= PIN_STRONG_DEV * atrPct && dev >= 0.03);
     const lowVol = volX < PIN_MIN_VOLX;
@@ -2106,6 +2175,7 @@ async function pinEvalSubs(){
        再清三张 Map(冷却游标随之丢弃属已知副作用, 回TOP100可重报一次, 接受)。 */
     del.forEach(s=>{
       const sym = s.split("@")[0].toUpperCase();
+      bitgetPending.delete(sym);   /* ★第十二轮(r12-D): 换出榜单同步清 Bitget 进行中根——旧版只清三个 Map, 该条目残留累积; */
       const st = pinState.get(sym);
       if (st){
         ["pendingLow","pendingHigh"].forEach(k=>{
@@ -2136,14 +2206,15 @@ function pinBoot(){
   pinRefreshTab();                        /* ★v5 P3(2026-10-29): 恢复后立即同步 tab 角标; 上 P1 后刷新瞬间 pendN=0、pinUnread=0,
                                              本次渲染结果与默认态一致(肉眼零差异), 但属语义对齐——防将来有改动漏同步 */
   pinEvalSubs();
-  setInterval(pinEvalSubs, 5*60*1000);    // 每5分钟按成交额重估订阅
-  setInterval(refreshAllTrends, PIN_TREND_REFR);   // 每5分钟重估全部币的 5m 趋势
+  /* ★r12-E: interval 句柄化——供 beforeunload 统一清理(见 pinBoot 附近声明区) */
+  pinEvalTimer  = setInterval(pinEvalSubs, 5*60*1000);    // 每5分钟按成交额重估订阅
+  trendTimer    = setInterval(refreshAllTrends, PIN_TREND_REFR);   // 每5分钟重估全部币的 5m 趋势
   schedulePinRepair(true);                // ★ 页面(重)启动即时修缺口: 跳过60s节流, 缺谁补谁(旧版要等 WS snapshot 1-2 分钟批量推送+下一轮修复, 现在冷启动即刻打 REST 补真实缺口, 最长约省 2 分钟)
   /* 増量部分: 启动 5 秒后再扫一次——冷启动时 pinEvalSubs 刚算完订阅表, pinStreams 可能还没满 100, 第二轮把漏网币补齐 */
   setTimeout(()=>{ if (!pinRepairing) schedulePinRepair(true); }, 5000);
   /* 📊 30分钟自证(六批⑤): 改用"确认后第30分钟那根 1m 收盘价"(bars 里 t≥ev.ts+30min 首根), 与回放路径同口径;
      pinState 无该币(掉出TOP100已清)时兜底 priceMap。 */
-  setInterval(()=>{
+  verifyTimer = setInterval(()=>{     /* ★r12-E: 句柄化(同 pinBoot 处注释) */
     const now = Date.now();
     let changed = false;
     pinEvents.forEach(ev=>{
@@ -2169,6 +2240,15 @@ function pinBoot(){
     if (changed){ savePinEvents(); if (curView === "pin") render(); }
   }, 30*1000);
 }
+/* ★第十二轮(r12-E): beforeunload 统一收尾——清 5 interval + 双 WS; 普通关页进程回收本无收益,
+   为 PWA/长挂场景不留闭包引用。 */
+window.addEventListener("beforeunload", ()=>{
+  [pinEvalTimer, trendTimer, verifyTimer, rotateTimer, rankTimer]
+    .forEach(t=>t && clearInterval(t));
+  if (ws2PingTimer) clearInterval(ws2PingTimer);
+  try{ if (ws)  { ws.onclose = null;  ws.close();  } }catch(_){}
+  try{ if (ws2) { ws2.onclose = null; ws2.close(); } }catch(_){}
+});
 async function pinInitHistory(sym){
   const arr = await fapi(`/fapi/v1/klines?symbol=${encodeURIComponent(sym)}&interval=1m&limit=120`);
   const raw = Array.isArray(arr) ? arr.filter(k=>Array.isArray(k) && k.length > 6) : [];
@@ -2265,6 +2345,10 @@ function renderPinList(){
     }
   }
   const nDswp = dswpMap.size;
+  /* ★r12-H: 同币聚合纯展示角标——当天(24h存档窗)该币事件总数(全状态), 一次遍历建 Map 免 O(n²);
+     纯展示不做点击筛选/展开(用户拍板), 仅在 N≥2 时显示(单针不用打标签)。 */
+  const symCntMap = new Map();
+  for (const e of pinEvents) symCntMap.set(e.sym, (symCntMap.get(e.sym) || 0) + 1);
   /* 大号方向箭头(卡片右侧): 下插=红·做多信号 / 上插=绿·做空信号 / 进行中=黄 / 失效=灰 */
   const ARROW_DOWN = '<path d="M17,2 H31 V26 H40 L24,46 L8,26 H17 Z"/>';
   const ARROW_UP   = '<path d="M17,46 H31 V22 H40 L24,2 L8,22 H17 Z"/>';
@@ -2371,6 +2455,7 @@ function renderPinList(){
           ${ev.ob ? `<span class="pin-tag ob">👑 OB共振 ${ev.ob.kind === 'bull' ? '↑' : '↓'}</span>` : ''}
           ${(ev.lowVol && !pend && !fail) ? '<span class="pin-tag lowvol">💤 低量降级</span>' : ''}
           ${dswpMap.get(ev) ? '<span class="pin-tag dswp">⛔ 连续双扫·观望</span>' : ''}
+          ${((symCntMap.get(ev.sym) || 0) > 1) ? `<span class="pin-tag">🗓 同币 ${symCntMap.get(ev.sym)} 针</span>` : ''}   /* ★r12-H */
           ${isKZ ? '<span class="pin-tag kz">🔥 核心时段</span>' : ''}
           ${ev.choch ? '<span class="pin-tag choch">✅ ChoCh确认</span>' : ''}
           ${ev.reentry ? '<span class="pin-tag zone">🎯 回踩入场区</span>' : ''}
