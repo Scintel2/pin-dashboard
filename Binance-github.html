@@ -127,7 +127,7 @@
   .tab.pt.disabled { opacity:.35; pointer-events:none; }
   .pin-item { background:#12161c; border:1px solid #1e242c; border-radius:12px; padding:12px 16px; display:flex; gap:14px; align-items:flex-start; }   /* ★r17: 两列顶对齐(原 center)——右列第一行(资金费)才能与左列第一行(币名)真正同水平线 */
   .pin-main { flex:1 1 auto; min-width:0; display:flex; flex-direction:column; gap:5px; }
-  .pin-side { flex:0 0 auto; display:flex; flex-direction:column; align-items:flex-start; justify-content:flex-start; align-self:stretch; min-height:156px; position:relative; gap:8px; }   /* ★tv: min-height 140→156（资金费27+gap8+kchart120+1）；★r23: 左对齐列内/图静态流式/绝不溢出卡片；★r17 资金费钉列顶与币名同水平线 */
+  .pin-side { flex:0 0 auto; display:flex; flex-direction:column; align-items:center; justify-content:flex-start; align-self:stretch; min-height:156px; position:relative; gap:8px; }   /* ★tv: min-height 140→156（资金费27+gap8+kchart120+1）；★align(2026-11-01 老登指示): flex-start→center——资金费块水平居中正对 K 线中心线(列内最宽子=K图152, 其余不动)；★r17 资金费钉列顶与币名同水平线(纵向不变) */
   .pin-fund { padding:5px 9px 4px; background:#181c23; border:1px solid #232a33; border-radius:10px; text-align:center; margin:0 2px; }   /* ★r16: 箭头上方资金费块(复用 r15 fundHTML/fundingMap, 币安 premiumIndex 口径) */
   .pin-fund .fund { font-size:12px; margin-bottom:0; }   /* 缩小版(r15 全局 .fund 是 14px——箭头区空间窄) */
   .pin-fund .fund .plabel { font-size:10px; }
