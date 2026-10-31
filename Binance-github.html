@@ -127,15 +127,18 @@
   .tab.pt.disabled { opacity:.35; pointer-events:none; }
   .pin-item { background:#12161c; border:1px solid #1e242c; border-radius:12px; padding:12px 16px; display:flex; gap:14px; align-items:flex-start; }   /* ★r17: 两列顶对齐(原 center)——右列第一行(资金费)才能与左列第一行(币名)真正同水平线 */
   .pin-main { flex:1 1 auto; min-width:0; display:flex; flex-direction:column; gap:5px; }
-  .pin-side { flex:0 0 auto; display:flex; flex-direction:column; align-items:center; justify-content:flex-start; align-self:stretch; min-height:156px; position:relative; gap:8px; }   /* ★r19: stretch 拉满整卡高(窄窗口标签换行卡变高时列跟着长, 箭头始终正中) + position:relative 锚定基准; ★r17 语义保持: 资金费钉在列顶与币名同水平线; min-height=156: 156=实测常规卡内容自然高(T1 实测 sideH=156); 防重叠最小仅需 资金费26+gap8+箭头88=122——156>122 双保险(老版注释把 26+8+88 误标为 156 的来源, ★审查遗留#2 已更正): 短卡时箭头不下沉、不压资金费 */
+  .pin-side { flex:0 0 auto; display:flex; flex-direction:column; align-items:flex-start; justify-content:flex-start; align-self:stretch; min-height:140px; position:relative; gap:8px; }   /* ★r23: align-items center→flex-start(列内左对齐——K线图左缘与资金费块对齐); min-height 126→140(=资金费27+gap8+图104+1)——图改静态流式列内排, 不居中钉位; 列随卡高 stretch(r19 使命已毕), 图绝不溢出卡片; ★r17: 资金费钉列顶与币名同水平线 */
   .pin-fund { padding:5px 9px 4px; background:#181c23; border:1px solid #232a33; border-radius:10px; text-align:center; margin:0 2px; }   /* ★r16: 箭头上方资金费块(复用 r15 fundHTML/fundingMap, 币安 premiumIndex 口径) */
   .pin-fund .fund { font-size:12px; margin-bottom:0; }   /* 缩小版(r15 全局 .fund 是 14px——箭头区空间窄) */
   .pin-fund .fund .plabel { font-size:10px; }
-  .pin-arrow { width:56px; height:88px; border-radius:14px; display:flex; align-items:center; justify-content:center; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); }   /* ★r19: 绝对定位钉在卡片上下正中(=.pin-side 拉伸高度的中点)——窗口伸缩/标签换行致卡片变高时, 箭头随卡片中心走、相对卡片位置恒定, 不再随资金费下面吊着漂; drift 浮动动画在 svg 上, 与本容器 transform 无冲突 */
-  .pin-arrow svg { width:34px; height:46px; display:block; }   /* 框内小箭头, 进行中按偏离分级浮动(见 d1/d2/d3) */
-  .pin-arrow.low  { background:rgba(46,189,133,.10); border:1.5px solid rgba(46,189,133,.45); box-shadow:0 0 12px rgba(46,189,133,.25); } .pin-arrow.low  svg path { fill:#2ebd85; }   /* 扫下方=绿·向下(红涨绿跌, 含进行中) */
-  .pin-arrow.high { background:rgba(246,70,93,.10);  border:1.5px solid rgba(246,70,93,.45);  box-shadow:0 0 12px rgba(246,70,93,.25); }  .pin-arrow.high svg path { fill:#f6465d; }  /* 扫上方=红·向上(红涨绿跌, 含进行中) */
-  .pin-arrow.fail { background:rgba(112,122,138,.06); border:1.5px solid rgba(112,122,138,.3); }                     .pin-arrow.fail svg path { fill:#707a8a; }
+  .pin-kchart { width:136px; height:104px; display:flex; align-items:stretch; padding:8px 4px; box-sizing:border-box; }   /* ★r23(排板)+★r24: 删 absolute 钉位与背景/边框/圆角(裸蜡烛组), 高 104(=padding8x2+plot88); ★r24 宽 96→136=8槽x16px(1m蜡烛密度贴近看盘), 列内静态流式紧跟资金费之下——左缘与资金费对齐, 不溢出 */
+  .kc { position:relative; flex:1 1 0; margin:0 3px; }   /* 蜡烛槽(相对定位; 影线 i / 实体 b 绝对定位其中) */
+  .kc i { position:absolute; left:50%; width:1px; margin-left:-0.5px; }   /* 影线(色随涨跌) */
+  .kc b { position:absolute; left:50%; width:9px; margin-left:-4.5px; border-radius:1.5px; }   /* ★r24: 宽 7→9(16px 槽内 9/16, 影线实体比例贴近看盘) */
+  .kc.up   i, .kc.up   b { background:#f6465d; }   /* 收>开=红(涨)·红涨绿跌全站一致 */
+  .kc.down i, .kc.down b { background:#2ebd85; }   /* 收<开=绿(跌) */
+  .kc.doji i, .kc.doji b { background:#8892a6; }   /* 收=开=灰(平) */
+  .pin-kchart .kc-empty { flex:1; display:flex; align-items:center; justify-content:center; color:#5c6778; font-size:11px; }   /* bars 缺失(失效卡 state 已删)显 '-', 诚实不造数据 */
   .pin-item.strong { border-color:#fcd535; background:linear-gradient(100deg,#33290f 0%,#1c1913 55%,#12161c 100%); animation:pinGlow 1.8s ease-in-out 4; }
   @keyframes pinGlow { 0%,100%{ box-shadow:0 0 8px rgba(252,213,53,.2);} 50%{ box-shadow:0 0 22px rgba(252,213,53,.5);} }
   .pin-row1 { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
@@ -163,21 +166,10 @@
   /* 🟡进行中 / ⚪失效 状态样式; 超偏≥10% 进行中=刺眼橙红闪烁(⚠️远离插针针尖, 可能在扫大流动性) */
   .pin-item.pending { border-color:#c9a227; background:linear-gradient(100deg,#2b2408 0%,#1d1b0c 55%,#12161c 100%); animation:pendingGlow 2s ease-in-out infinite; }
   @keyframes pendingGlow { 0%,100%{ box-shadow:0 0 6px rgba(201,162,39,.22);} 50%{ box-shadow:0 0 18px rgba(201,162,39,.6);} }
-  /* 🟡进行中卡片: 偏离分级驱动箭头浮动(d1/d2/d3 三档必居其一, 无需基础规则) */
-  /* 摆动分级(2026-10-28): 箭头幅度/周期随偏离百分比缩放, 波动越大摆得越猛 ——
-     d1(偏离2.5%~5%)小幅慢摆 10px/2.4s; d2(5%~10%)中幅 15px/1.8s; d3(≥10%超偏)大幅急摆 20px/1.2s */
-  .pin-item.pending.d1 .pin-arrow.low  svg { animation:arrowDriftD1 0.6s ease-in-out infinite; }   /* ★r21(二次拍板): 再×2(时长再减半, 行程不变)——r16 版 1.2s 仍嫌慢; 总脉络 2.4s→1.2s→0.6s */
-  .pin-item.pending.d1 .pin-arrow.high svg { animation:arrowDriftU1 0.6s ease-in-out infinite; }   /* ★r21 */
-  .pin-item.pending.d2 .pin-arrow.low  svg { animation:arrowDriftD2 0.45s ease-in-out infinite; }   /* ★r21: 1.8s→0.9s→0.45s */
-  .pin-item.pending.d2 .pin-arrow.high svg { animation:arrowDriftU2 0.45s ease-in-out infinite; }   /* ★r21 */
-  .pin-item.pending.d3 .pin-arrow.low  svg { animation:arrowDriftD3 0.3s ease-in-out infinite; }   /* ★r21: 1.2s→0.6s→0.3s */
-  .pin-item.pending.d3 .pin-arrow.high svg { animation:arrowDriftU3 0.3s ease-in-out infinite; }   /* ★r21 */
-  @keyframes arrowDriftD1 { 0%,100%{ transform:translateY(0);} 50%{ transform:translateY(10px);} }   /* 小幅慢摆 */
-  @keyframes arrowDriftU1 { 0%,100%{ transform:translateY(0);} 50%{ transform:translateY(-10px);} }
-  @keyframes arrowDriftD2 { 0%,100%{ transform:translateY(0);} 50%{ transform:translateY(15px);} }   /* 中幅中速 */
-  @keyframes arrowDriftU2 { 0%,100%{ transform:translateY(0);} 50%{ transform:translateY(-15px);} }
-  @keyframes arrowDriftD3 { 0%,100%{ transform:translateY(0);} 50%{ transform:translateY(20px);} }   /* 大幅急摆(叠加热卡�红闪边框) */
-  @keyframes arrowDriftU3 { 0%,100%{ transform:translateY(0);} 50%{ transform:translateY(-20px);} }
+  /* ★r22: 方向箭头整体退役(摆动族 arrowDrift 6规则+6keyframes 一并移除)——1m K线 mini 图替上:
+     末根含进行中未收盘根, 随实时价跳动天然带"活"感(比刻意的摆幅分级更真);
+     摆速两轮×2 提速史(2.4→1.2→0.6 / 1.8→0.9→0.45 / 1.2→0.6→0.3s)就此定格。
+     d1/d2/d3 档名在 JS 侧保留作分档标记; hot 档规则在下一行未动。 */
   .pin-item.pending.hot { border-color:#ff5e2b; background:linear-gradient(100deg,#3a1504 0%,#2b0f06 55%,#12161c 100%); animation:pinHotGlow 1.1s ease-in-out infinite; }
   @keyframes pinHotGlow { 0%,100%{ box-shadow:0 0 10px rgba(255,94,43,.35);} 50%{ box-shadow:0 0 26px rgba(255,94,43,.85);} }
   .pin-row2 .hot-dev { color:#ff8a4d; font-weight:800; text-shadow:0 0 8px rgba(255,94,43,.8); font-size:17px; }
@@ -343,6 +335,34 @@ function fundHTML(sym){
   const cls = r>0 ? "up" : (r<0 ? "down" : "na");
   return { block: '<span class="fund"><span class="plabel">资金费：</span><span class="fval '+cls+'">'+txt4.replace(/</g, "&lt;")+'</span></span>',   /* ★r15: "<0.0001%" 在 innerHTML 里会被当标签吞掉, 卡面实体转义; title 是纯文本属性用原字符 */
            title: '资金费 '+txt5+(f.next? ' · 下次结算 '+fundCdTxt(f.next):''), useful: true };
+}
+/* ---------- ★r22+r24: 插针卡 1m K线 mini 图(最近8根)构造 ----------
+   数据: pinState.get(sym).bars(1m 窗口常驻65根)末8=末7收盘+liveBar进行中, 未收盘根实时跳;
+   映射: 图内 hi~lo 归一化 0~88px(= .pin-kchart 高104-padding上下各8, ★r23 加高 56→88——改 CSS 高度时两处一起改); 
+   配色: 收>开 红(涨)/收<开 绿(跌)/收=开 灰(平)——红涨绿跌全站一致;
+   容错: bars 不足5按有数根画, 0根(失效卡 state 已删)显示 '—' 诚实不造数据;
+   防抖: 调用方 __lastK 比整串, 值不变零 DOM 写入(hover 不闪)。 */
+function buildKHTML(bars){
+  if (!Array.isArray(bars) || !bars.length) return '<div class="kc-empty">—</div>';
+  const ok = [];
+  let hi = -Infinity, lo = Infinity;
+  for (const b of bars){
+    if (b && isFinite(b.h) && isFinite(b.l) && isFinite(b.o) && isFinite(b.c)){ ok.push(b); hi = Math.max(hi, b.h); lo = Math.min(lo, b.l); }
+  }
+  if (!ok.length) return '<div class="kc-empty">—</div>';
+  if (!(hi > lo)) hi = lo + 1;   /* 全平棒: 造最小 range 防除零 */
+  const plotH = 88;
+  const y = v => Math.max(0, Math.min(plotH, Math.round((hi - v) / (hi - lo) * plotH)));
+  const out = [];
+  for (const b of ok){
+    const up = b.c > b.o, dn = b.c < b.o;
+    const cls = up ? "up" : (dn ? "down" : "doji");
+    const wh = Math.max(1, Math.min(plotH, y(b.l) - y(b.h)));   /* ★r24 保真: 去 +1 膨胀——影线高=净 y(l)-y(h), 与真实K线一致(修"比看盘胖") */
+    const bTop = Math.min(y(b.o), y(b.c));
+    const bh = Math.max(1, Math.min(plotH, Math.abs(y(b.o) - y(b.c))));   /* ★r24 保真(核心): 旧 max(2,|Δ|+1) 把小实体画胖(2px 砖)——真实K线 o≈c 是纸片线, doji 是1px十字星; 新=净Δ且下限1px, 比例与看盘一致 */
+    out.push('<span class="kc '+cls+'"><i style="top:'+y(b.h)+'px;height:'+wh+'px"></i><b style="top:'+bTop+'px;height:'+bh+'px"></b></span>');
+  }
+  return out.join('');
 }
 /* ★第十一轮④ Step2(2026-10-29): webhook 从明文硬编码改为 localStorage 可覆盖+占位串。
    背景: 旧 hook 已进 git 历史(公开仓库)成事实泄露面，Step1 用户手工换新 hook 并入 localStorage。
@@ -1939,6 +1959,8 @@ function pinOnKline(sym, k){
   const o = +k.o, h = +k.h, l = +k.l, c = +k.c, v = +k.v, t = +k.t;
   if (!(o > 0 && h >= l && v >= 0)) return;
   st.lastTick = { t, c };   /* ★r13-followup(审查#1): 最新 tick(含未收盘)缓存——st.bars 只存已收盘根, watchdog 若读末根收盘价=上一分钟价, 实时性退化到 60s; 用此缓存保 1s 粒度 */
+  if (k.x) delete st.liveBar;   /* ★r23: 收盘 tick 自清进行中根, 防陈旧 phantom 冒充 */
+  else st.liveBar = { t, o, h, l, c, v };   /* ★r23: 进行中根实时 OHLC 缓存(WS 每秒未收盘推送)——K线迷你图末根随真实轨迹跳动 */
   pinCheck(sym, st, t, o, h, l, c, v, false);   // 实时 tick 级检测(含未收盘K线, 主/副连接各推一次均幂等)
   if (k.x){   // 收盘: 推入bars并更新ATR —— t 去重: 三条数据腿(主WS/副WS/REST修复)喂同一根只计一次
     if (!st.bars.some(b=>b.t === t)){
@@ -2295,6 +2317,9 @@ function pinWatchdog(){
     }
   }
   if (changed){ savePinEvents(); if (curView === "pin") scheduleRender(); }
+  /* ★r23: 黄卡存在时每秒驱动重绘——K线迷你图末根(进行中)随 st.liveBar 每 1s 跳动=真实轨迹;
+     scheduleRender 100ms 防抖兜合并, renderPinList 内建 __lastK/__lastMain 零值不写; 无黄卡不空转 */
+  if (!changed && curView === "pin" && pinEvents.some(e => e.status === "pending" && !e.replay)) scheduleRender();
 }
 
 /* ---------- 订阅管理: TOP100 按成交额, 每5分钟重估增量增删 ---------- */
@@ -2477,7 +2502,7 @@ function pinIsCross(ev){
 }
 /* 节点复用版(2026-10-28 修"箭头几乎不动"): 旧版每次刷新 list.innerHTML="" 全量重建,
    实测 ~160ms 重建一次 ⇒ 进行中箭头 CSS 动画每次刚起步就被销毁重来, 永远停在 0% 相位。
-   现按 sym|side|ts 复用卡片骨架: 每次刷新仅更新文本与类名, 不重建 .pin-arrow/卡片节点,
+   现按 sym|side|ts 复用卡片骨架: 每次刷新仅更新文本与类名, 不重建 .pin-kchart/卡片节点,
    也不无脑清空列表 ⇒ 值刷新渲染零 DOM 重建/移动, 进行中箭头浮动动画连续不断。 */
 const pinCardMap = new Map();   // key(sym|side|ts) → 卡片节点
 function renderPinList(){
@@ -2506,8 +2531,7 @@ function renderPinList(){
   const symCntMap = new Map();
   for (const e of pinEvents) symCntMap.set(e.sym, (symCntMap.get(e.sym) || 0) + 1);
   /* 大号方向箭头(卡片右侧): 下插=红·做多信号 / 上插=绿·做空信号 / 进行中=黄 / 失效=灰 */
-  const ARROW_DOWN = '<path d="M17,2 H31 V26 H40 L24,46 L8,26 H17 Z"/>';
-  const ARROW_UP   = '<path d="M17,46 H31 V22 H40 L24,2 L8,22 H17 Z"/>';
+  /* ★r22: ARROW_UP/ARROW_DOWN 常量退役(方向箭头→1m K线图) */
   const keyOf = ev => ev.sym + "|" + ev.side + "|" + ev.ts;
   const all = pinEvents.slice().sort((a,b)=>{
     const rk = e=>{
@@ -2562,22 +2586,20 @@ function renderPinList(){
       const touchL = isLow && ev.tip <= lp * 1.005;    // 下插针尖贴近/跌破 24H 低
       hl24 = `<span class="pin-hl24${(touchH || touchL) ? " touch" : ""}"><span class="lb">24H </span>${fmtPrice(lp)} ~ ${fmtPrice(hp)}${touchH ? " · 触24H高" : (touchL ? " · 触24H低" : "")}</span>`;
     }
-    let dirCls, dirTxt, itemCls = "", pxLabel = "触发价 ", arrowCls;
+    let dirCls, dirTxt, itemCls = "", pxLabel = "触发价 ";   /* ★r22: arrowCls 退役(方向颜色由蜡烛自带: 涨红跌绿) */
     if (pend){
-      /* 进行中: 状态徽章黄, 但大箭头已按方向着色(上插红↑/下插绿↓, 红涨绿跌)
-         偏离≥10% 超级插针 → 刺眼橙红闪烁 */
-      dirCls = "pending";  dirTxt = isLow ? "向下插针中" : "向上插针中";   itemCls = " pending"; pxLabel = "现价 "; arrowCls = isLow ? "low" : "high";
+      /* 进行中: 状态徽章黄; 偏离≥10% 超级插针 → hot 档刺眼橙红闪烁 */
+      dirCls = "pending";  dirTxt = isLow ? "向下插针中" : "向上插针中";   itemCls = " pending"; pxLabel = "现价 ";
       /* 摆动分级: 摆幅/周期随偏离缩放(≥10% 大幅急摆+hot 橙红闪, 5%~10% 中幅, <5% 小幅慢摆) */
       const ad = Math.abs(ev.dev);
       if (ad >= PIN_HOT_DEV) itemCls += " hot d3";
       else if (ad >= PIN_DRIFT_MID) itemCls += " d2";
       else itemCls += " d1";
     } else if (fail){
-      dirCls = "failed";    dirTxt = "未回归失效";    itemCls = " failed"; arrowCls = "fail";
+      dirCls = "failed";    dirTxt = "未回归失效";    itemCls = " failed";
     } else {
       dirCls = isLow ? "sweep-low" : "sweep-high";
       dirTxt = isLow ? "扫下方 · 偏多" : "扫上方 · 偏空";
-      arrowCls = isLow ? "low" : "high";
       if (isCross) itemCls = " cross";   // 逆势: 淡化置底(不响铃不角标, 供回头验证)
     }
     /* 趋势标签(红涨绿跌): 角度制显示, ≥45° 标"强"
@@ -2640,7 +2662,7 @@ function renderPinList(){
 
     let d = pinCardMap.get(keyOf(ev));
     if (!d){
-      /* 首次出现: 一次性建好骨架(卡片 + .pin-main + .pin-side/.pin-arrow) */
+      /* 首次出现: 一次性建好骨架(卡片 + .pin-main + .pin-side/.pin-kchart) */
       d = document.createElement("div");
       d.dataset.sym = ev.sym;
       d.title = "点击复制币种名";
@@ -2652,19 +2674,26 @@ function renderPinList(){
       const side = document.createElement("div");  side.className = "pin-side";
       const pFund = document.createElement("div"); pFund.className = "pin-fund";   /* ★r16: 资金费块(pin-side 列向首子元素); ★r17: 列顶对齐→吊在卡片右上角, 与币名同水平线 */
       side.appendChild(pFund);
-      const arrow = document.createElement("span"); arrow.className = "pin-arrow " + arrowCls;
-      arrow.innerHTML = `<svg viewBox="0 0 48 48">${isLow ? ARROW_DOWN : ARROW_UP}</svg>`;
-      side.appendChild(arrow);
+      const kc = document.createElement("div"); kc.className = "pin-kchart";   /* ★r22: 1m K线容器; 内容由更新路径 buildKHTML 填充 */
+      side.appendChild(kc);   /* ★r22-hotfix3: 探针实证 D4 漏挂(side.children 只有 pin-fund, kc 造而未挂) */
       d.appendChild(main);
       d.appendChild(side);
-      d.__main = main; d.__arrow = arrow; d.__fund = pFund;   /* ★r16: __fund 句柄(值刷新走 __lastFund 防抖) */
+      d.__main = main; d.__kc = kc; d.__fund = pFund;   /* ★r22: __kc 句柄(1m K线, __lastK 防抖); __fund(资金费, __lastFund 防抖) */
       pinCardMap.set(keyOf(ev), d);
     }
     /* 更新: 仅当有变化才写(值不变 ⇒ 零 DOM 写入; 动画元素全程不重建) */
     const newCls = "pin-item" + itemCls + strongCls;
     if (d.className !== newCls) d.className = newCls;
-    const wantArrowCls = "pin-arrow " + arrowCls;
-    if (d.__arrow.className !== wantArrowCls) d.__arrow.className = wantArrowCls;
+    /* ★r23+★r24: 「末7收盘根+liveBar进行中根」=8根真实轨迹(老登 2026-11-01 拍板 5→8)——st.liveBar=WS 每秒推送的未收盘根实时OHLC(收盘tick自清); t 新于末根才收; 无 liveBar 退回 bars 末8; 不足按有数画, 0根显 '-'; __lastK 整串防抖零 DOM 写入 */
+    const stNow = pinState.get(ev.sym);
+    let bars5 = [];
+    if (stNow && Array.isArray(stNow.bars)){
+      const lv = stNow.liveBar, lastT = stNow.bars.length ? stNow.bars[stNow.bars.length - 1].t : 0;
+      if (lv && lv.t > lastT && isFinite(+lv.o)) bars5 = stNow.bars.slice(-7).concat([lv]);
+      else bars5 = stNow.bars.slice(-8);
+    }
+    const khtml = buildKHTML(bars5);
+    if (d.__lastK !== khtml){ d.__kc.innerHTML = khtml; d.__lastK = khtml; }
     const fund = fundHTML(ev.sym);   /* ★r16: 复用 r15 数据层(币安 premiumIndex); 值不变⇒零 DOM 写入(与 __lastMain 同防抖套路) */
     if (d.__lastFund !== fund.block){ d.__fund.innerHTML = fund.block; d.__lastFund = fund.block; }
     /* ★r20(审查2-发现1+发现4/P1+P3): useful 旗标统一三卡口径(替"资金费未加载"字符串比较——脆, 换文案就漏); 变化才写(同 __lastFund 防抖, hover 不因每帧重写 title 而闪) */
